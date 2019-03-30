@@ -118,7 +118,7 @@ func (r *Room) broadcastMsg(msg string) {
 		}else{
 			log.Printf("sending received to %s",clientName)
 			go func(wc chan<- string) {
-				wc <- "received"
+				wc <- "received\n"
 			}(wc)
 		}
 	}
