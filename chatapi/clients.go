@@ -30,9 +30,11 @@ func StartClient(name string, mode string, msgCh chan<- string, cn io.ReadWriteC
 	if mode == "sender" {
 		go func() {
 			scanner := bufio.NewScanner(c.Reader)
+			buf := make([]byte, 0, 64*2046)
+			scanner.Buffer(buf, 2046*2046)
 			for scanner.Scan() {
 				msg := name + ":" + scanner.Text() + "\n"
-				log.Printf("%s|%s", roomName, msg)
+				log.Printf("New message: %s|%s", roomName, name)
 				msgCh <- msg
 			}
 			log.Printf("%s|Done getting messages",name);
