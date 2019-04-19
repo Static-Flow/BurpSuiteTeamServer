@@ -38,7 +38,8 @@ func main() {
 	clientInfo := struct {
 		Name string `json:"name"`
 		Room string `json:"room"`
-	}{*clientName, *roomName}
+		Mode string `json:"mode"`
+	}{*clientName, *roomName,"sender"}
 	data, _ := json.Marshal(clientInfo)
 	conn.Write(data)
 	fmt.Println("Start typing your messages")

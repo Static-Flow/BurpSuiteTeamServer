@@ -42,6 +42,7 @@ func StartClient(name string, mode string, msgCh chan<- string, cn io.ReadWriteC
 				msgCh <- msg
 			}
 			close(channelDone)
+			cn.Close()
 			if err := scanner.Err(); err != nil {
 				log.Printf("err: %s", err)
 			}
