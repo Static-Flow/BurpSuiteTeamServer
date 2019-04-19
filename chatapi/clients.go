@@ -19,7 +19,7 @@ type client struct {
 	second argument is a readwritercloser representing a connection at which the client is communicating
 	third argument is a quit channel. If a signal is passed through this channel, the client closes.
 */
-func StartClient(name string, msgCh chan<- string, cn io.ReadWriteCloser, roomName string) (chan<- string, <-chan struct{}) {
+func StartClient(name string, mode string, msgCh chan<- string, cn io.ReadWriteCloser, roomName string) (chan<- string, <-chan struct{}) {
 	c := new(client)
 	c.Reader = bufio.NewReader(cn)
 	c.Writer = bufio.NewWriter(cn)
@@ -27,20 +27,31 @@ func StartClient(name string, msgCh chan<- string, cn io.ReadWriteCloser, roomNa
 	channelDone := make(chan struct{})
 
 	//setup the reader. When the client sends a message, we will send it to the chat room
-	go func() {
-		scanner := bufio.NewScanner(c.Reader)
-		for scanner.Scan() {
-			msg := name + ":" + scanner.Text() + "\n"
-			log.Printf("%s|%s", roomName, msg)
-			msgCh <- msg
-		}
-		close(channelDone)
-		cn.Close()
-	}()
+	if mode == "sender" {
+		go func() {
+			scanner := bufio.NewScanner(c.Reader)
+			buf := make([]byte, 0, 8192*8192)
+			scanner.Buffer(buf, 8192*8192)
+			for scanner.Scan() {
+				log.Println(scanner.Text())
+				if scanner.Text() == "bye" {
+					break;
+				}
+				msg := name + ":" + scanner.Text() + "\n"
+				log.Printf("New message: %s|%s", roomName, name)
+				msgCh <- msg
+			}
+			close(channelDone)
+			if err := scanner.Err(); err != nil {
+				log.Printf("err: %s", err)
+			}
+		}()
 
-	//setup the writer
-	c.writeMonitor()
-
+		c.writeMonitor()
+	}else{
+		//setup the writer
+		c.writeMonitor()
+	}
 	return c.wc, channelDone
 }
 

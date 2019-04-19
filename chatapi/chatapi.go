@@ -19,6 +19,7 @@ type ChatAPI struct {
 type clientInfo struct {
 	Room string `json:"room"`
 	Name string `json:"name"`
+	Mode string `json:"mode"`
 }
 
 //New start a new instance of the new chat api
@@ -63,6 +64,6 @@ func (cAPI *ChatAPI) handleClient(cinfo *clientInfo, c io.ReadWriteCloser) {
 	if !ok {
 		r = CreateRoom(cinfo.Room)
 	}
-	r.AddClient(c, cinfo.Name)
+	r.AddClient(c, cinfo.Name, cinfo.Mode)
 	cAPI.rooms[cinfo.Room] = r
 }

@@ -9,6 +9,7 @@ import (
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	tcpAddr := flag.String("tcp", "localhost:8989", "Address for the TCP chat server to listen on")
 	wsAddr := flag.String("ws", "localhost:8099", "Address for the websocket chat server to listen on")
 	flag.Parse()
