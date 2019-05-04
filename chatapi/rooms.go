@@ -3,17 +3,15 @@ package chatapi
 import (
 	"io"
 	"log"
-	"sync"
 	"strings"
+	"sync"
 )
-
 
 //Room type represents a chat room
 type Room struct {
 	name    string
 	Msgch   chan string
 	clients map[string]chan<- string
-	clientsResp map[string]chan<- string
 	//signals the quitting of the chat room
 	Quit chan struct{}
 	*sync.RWMutex
@@ -27,7 +25,6 @@ func CreateRoom(rname string) *Room {
 		Msgch:   make(chan string),
 		RWMutex: new(sync.RWMutex),
 		clients: make(map[string]chan<- string),
-		clientsResp: make(map[string]chan<- string),
 		Quit:    make(chan struct{}),
 	}
 	r.Run()
@@ -39,17 +36,9 @@ func (r *Room) AddClient(c io.ReadWriteCloser, clientname string, mode string) {
 	r.Lock()
 	defer r.Unlock()
 	if _, ok := r.clients[clientname]; ok {
-		if mode == "sender"{
-			log.Printf("Client %s already exist in chat room %s, existing...", clientname, r.name)
-			return
-		}
-		wc, done := StartClient(clientname, mode, r.Msgch, c, r.name)
-		r.clientsResp[clientname] = wc
-		go func() {
-			<-done
-			r.RemoveClientSync(clientname)
-		}()
-	} else{
+		log.Printf("Client %s already exist in chat room %s, existing...", clientname, r.name)
+		return
+	} else {
 		log.Printf("Adding client %s \n", clientname)
 		wc, done := StartClient(clientname, mode, r.Msgch, c, r.name)
 		r.clients[clientname] = wc
@@ -72,7 +61,6 @@ func (r *Room) RemoveClientSync(name string) {
 	defer r.Unlock()
 	log.Printf("Removing client %s \n", name)
 	delete(r.clients, name)
-	delete(r.clientsResp, name)
 }
 
 //Run runs a chat room
@@ -99,7 +87,6 @@ func (r *Room) CloseChatRoomSync() {
 	close(r.Msgch)
 	for name := range r.clients {
 		delete(r.clients, name)
-		delete(r.clientsResp, name)
 	}
 }
 
@@ -110,13 +97,13 @@ func (r *Room) broadcastMsg(msg string) {
 	defer r.RUnlock()
 	sendingClient := strings.Split(msg, ":")[0]
 	for clientName, wc := range r.clients {
-		log.Printf("%s : %s = %t",sendingClient,clientName, sendingClient == clientName)
-		if(sendingClient != clientName){
+		log.Printf("%s : %s = %t", sendingClient, clientName, sendingClient == clientName)
+		if sendingClient != clientName {
 			go func(wc chan<- string) {
 				wc <- msg
 			}(wc)
-		}else{
-			log.Printf("sending received to %s",clientName)
+		} else {
+			log.Printf("sending received to %s", clientName)
 			go func(wc chan<- string) {
 				wc <- "received"
 			}(wc)

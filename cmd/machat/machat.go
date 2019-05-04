@@ -2,15 +2,14 @@ package main
 
 import (
 	"flag"
-	"log"
-
+	"github.com/Static-Flow/BurpSuiteTeamServer/chatapi"
 	"github.com/minaandrawos/machat"
-	"github.com/minaandrawos/machat/chatapi"
+	"log"
 )
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	tcpAddr := flag.String("tcp", "localhost:8989", "Address for the TCP chat server to listen on")
+	tcpAddr := flag.String("tcp", "0.0.0.0:8989", "Address for the TCP chat server to listen on")
 	flag.Parse()
 	api := chatapi.New()
 	if err := machat.RunTCPWithExistingAPI(*tcpAddr, api); err != nil {

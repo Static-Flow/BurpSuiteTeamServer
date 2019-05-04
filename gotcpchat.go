@@ -1,17 +1,10 @@
 package machat
 
 import (
+	"github.com/Static-Flow/BurpSuiteTeamServer/chatapi"
 	"log"
-	//"machat/chatapi"
 	"net"
-
-	"github.com/minaandrawos/machat/chatapi"
 )
-
-//RunTCP will start chat tcp server on the provided connection string
-func RunTCP(connection string) error {
-	return RunTCPWithExistingAPI(connection, chatapi.New())
-}
 
 //RunTCPWithExistingAPI will start chat tcp server on the provided connection string using an existing chat api session
 func RunTCPWithExistingAPI(connection string, chat *chatapi.ChatAPI) error {
@@ -21,7 +14,6 @@ func RunTCPWithExistingAPI(connection string, chat *chatapi.ChatAPI) error {
 		return err
 	}
 	defer l.Close()
-	//chat := chatapi.New()
 	for {
 		conn, err := l.Accept()
 		if err != nil {
