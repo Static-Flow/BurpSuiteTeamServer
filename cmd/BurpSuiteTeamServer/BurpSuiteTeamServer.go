@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"github.com/Static-Flow/BurpSuiteTeamServer/src/chatapi"
+	"github.com/Static-Flow/BurpSuiteTeamServer/chatapi"
 	"log"
 	"net"
 	"os"
