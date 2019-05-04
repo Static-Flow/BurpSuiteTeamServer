@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"github.com/Static-Flow/BurpSuiteTeamServer/src/chatapi"
+	"github.com/Static-Flow/BurpSuiteTeamServer/src/machat"
 	"log"
 )
 
