@@ -35,7 +35,7 @@ func StartClient(name string, mode string, msgCh chan<- string, cn io.ReadWriteC
 			for scanner.Scan() {
 				log.Println(scanner.Text())
 				if scanner.Text() == "bye" {
-					break;
+					break
 				}
 				msg := name + ":" + scanner.Text() + "\n"
 				log.Printf("New message: %s|%s", roomName, name)
@@ -49,7 +49,7 @@ func StartClient(name string, mode string, msgCh chan<- string, cn io.ReadWriteC
 		}()
 
 		c.writeMonitor()
-	}else{
+	} else {
 		//setup the writer
 		c.writeMonitor()
 	}

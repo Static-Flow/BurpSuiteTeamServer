@@ -1,7 +1,7 @@
-package machat
+package src
 
 import (
-	"github.com/Static-Flow/BurpSuiteTeamServer/chatapi"
+	"github.com/Static-Flow/BurpSuiteTeamServer/src/chatapi"
 	"log"
 	"net"
 )
