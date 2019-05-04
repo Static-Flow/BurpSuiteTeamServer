@@ -1,0 +1,1 @@
+web: bin/machat.go
