@@ -66,7 +66,7 @@ func (r *Room) RemoveClientSync(name string) {
 //Run runs a chat room
 func (r *Room) Run() {
 	log.Println("Starting chat room", r.name)
-	//handle the chat room main message channel
+	//handle the chat room BurpSuiteTeamServer message channel
 	go func() {
 		for msg := range r.Msgch {
 			r.broadcastMsg(msg)

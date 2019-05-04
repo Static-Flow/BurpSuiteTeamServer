@@ -15,7 +15,7 @@ type client struct {
 
 /*
 	StartClient starts a chat client. This function uses the channel generator pattern
-	first argument is the main channel of chat room which the client belongs to. The client will be sending messages to this channel
+	first argument is the BurpSuiteTeamServer channel of chat room which the client belongs to. The client will be sending messages to this channel
 	second argument is a readwritercloser representing a connection at which the client is communicating
 	third argument is a quit channel. If a signal is passed through this channel, the client closes.
 */
