@@ -40,4 +40,5 @@ func main() {
 	if err := RunTCPWithExistingAPI(*tcpAddr, api); err != nil {
 		log.Fatalf("Could not listen on %s, error %s \n", *tcpAddr, err)
 	}
+	log.Println("Awaiting Clients...")
 }
