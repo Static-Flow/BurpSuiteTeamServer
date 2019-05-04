@@ -1,12 +1,12 @@
 package src
 
 import (
+	"flag"
 	"github.com/Static-Flow/BurpSuiteTeamServer/src/chatapi"
 	"log"
 	"net"
 )
 
-//RunTCPWithExistingAPI will start chat tcp server on the provided connection string using an existing chat api session
 func RunTCPWithExistingAPI(connection string, chat *chatapi.ChatAPI) error {
 	l, err := net.Listen("tcp", connection)
 	if err != nil {
@@ -25,4 +25,14 @@ func RunTCPWithExistingAPI(connection string, chat *chatapi.ChatAPI) error {
 	}
 
 	return err
+}
+
+func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	tcpAddr := flag.String("tcp", "0.0.0.0:8989", "Address for the TCP chat server to listen on")
+	flag.Parse()
+	api := chatapi.New()
+	if err := RunTCPWithExistingAPI(*tcpAddr, api); err != nil {
+		log.Fatalf("Could not listen on %s, error %s \n", *tcpAddr, err)
+	}
 }
