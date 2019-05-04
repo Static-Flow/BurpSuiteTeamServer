@@ -5,6 +5,7 @@ import (
 	"github.com/Static-Flow/BurpSuiteTeamServer/src/chatapi"
 	"log"
 	"net"
+	"os"
 )
 
 func RunTCPWithExistingAPI(connection string, chat *chatapi.ChatAPI) error {
@@ -29,7 +30,11 @@ func RunTCPWithExistingAPI(connection string, chat *chatapi.ChatAPI) error {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	tcpAddr := flag.String("tcp", "0.0.0.0:8989", "Address for the TCP chat server to listen on")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8989"
+	}
+	tcpAddr := flag.String("tcp", "0.0.0.0:"+port, "Address for the TCP chat server to listen on")
 	flag.Parse()
 	api := chatapi.New()
 	if err := RunTCPWithExistingAPI(*tcpAddr, api); err != nil {

@@ -1,1 +1,1 @@
-web: bin/machat.go
+web: BurpSuiteTeamServer
