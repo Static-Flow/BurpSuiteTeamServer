@@ -3,6 +3,7 @@ package chatapi
 import (
 	"io"
 	"log"
+	"reflect"
 	"strings"
 	"sync"
 )
@@ -44,6 +45,7 @@ func (r *Room) AddClient(c io.ReadWriteCloser, clientname string, mode string) {
 		r.clients[clientname] = wc
 		go func() {
 			<-done
+			log.Print("back in room")
 			r.RemoveClientSync(clientname)
 		}()
 	}
@@ -56,11 +58,17 @@ func (r *Room) ClCount() int {
 
 //RemoveClientSync removes a client from the chat room. This is a blocking call
 func (r *Room) RemoveClientSync(name string) {
+	log.Print("here")
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	r.Lock()
 	defer r.Unlock()
 	log.Printf("Removing client %s \n", name)
 	delete(r.clients, name)
+	for _, wc := range r.clients {
+		go func(wc chan<- string) {
+			wc <- "leavingroommate:" + name + "\n"
+		}(wc)
+	}
 }
 
 //Run runs a chat room
@@ -96,17 +104,29 @@ func (r *Room) broadcastMsg(msg string) {
 	r.RLock()
 	defer r.RUnlock()
 	sendingClient := strings.Split(msg, ":")[0]
-	for clientName, wc := range r.clients {
-		log.Printf("%s : %s = %t", sendingClient, clientName, sendingClient == clientName)
-		if sendingClient != clientName {
+	message := strings.Split(msg, ":")[1]
+	log.Printf("Message: %s", message)
+	if message == "newroommates\n" {
+		keys := reflect.ValueOf(r.clients).MapKeys()
+		strkeys := make([]string, len(keys))
+		for i := 0; i < len(keys); i++ {
+			strkeys[i] = keys[i].String()
+		}
+		log.Printf("Current clients: %s", strings.Join(strkeys, ","))
+		for _, wc := range r.clients {
 			go func(wc chan<- string) {
-				wc <- msg
+				wc <- "roommates:" + strings.Join(strkeys, ",") + "\n"
 			}(wc)
-		} else {
-			log.Printf("sending received to %s", clientName)
-			go func(wc chan<- string) {
-				wc <- "received"
-			}(wc)
+		}
+	} else {
+		log.Printf("sending client %s \n", sendingClient)
+		for clientName, wc := range r.clients {
+			log.Printf("%s : %s = %t", sendingClient, clientName, sendingClient == clientName)
+			if sendingClient != clientName {
+				go func(wc chan<- string) {
+					wc <- msg
+				}(wc)
+			}
 		}
 	}
 }

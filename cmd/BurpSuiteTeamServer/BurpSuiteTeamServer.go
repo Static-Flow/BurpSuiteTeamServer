@@ -14,6 +14,7 @@ func RunTCPWithExistingAPI(connection string, chat *chatapi.ChatAPI) error {
 		log.Println("Error connecting to chat client", err)
 		return err
 	}
+	log.Println("Awaiting Clients...")
 	defer l.Close()
 	for {
 		conn, err := l.Accept()
@@ -40,5 +41,4 @@ func main() {
 	if err := RunTCPWithExistingAPI(*tcpAddr, api); err != nil {
 		log.Fatalf("Could not listen on %s, error %s \n", *tcpAddr, err)
 	}
-	log.Println("Awaiting Clients...")
 }
