@@ -36,10 +36,6 @@ func StartClient(name string, mode string, msgCh chan<- string, cn io.ReadWriteC
 				log.Println(scanner.Text())
 				if scanner.Text() == "bye" {
 					break
-				} else if scanner.Text() == "newroommates" {
-					log.Printf("%s is equesting list of rommmates\n", name)
-					msg := name + ":" + scanner.Text() + "\n"
-					msgCh <- msg
 				} else {
 					msg := name + ":" + scanner.Text() + "\n"
 					log.Printf("New message: %s|%s", roomName, name)

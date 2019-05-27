@@ -104,7 +104,7 @@ func (r *Room) broadcastMsg(msg string) {
 	r.RLock()
 	defer r.RUnlock()
 	sendingClient := strings.Split(msg, ":")[0]
-	message := strings.Split(msg, ":")[1]
+	message := strings.Join(strings.Split(msg, ":")[1:], ":")
 	log.Printf("Message: %s", message)
 	if message == "newroommates\n" {
 		keys := reflect.ValueOf(r.clients).MapKeys()
@@ -118,6 +118,40 @@ func (r *Room) broadcastMsg(msg string) {
 				wc <- "roommates:" + strings.Join(strkeys, ",") + "\n"
 			}(wc)
 		}
+	} else if strings.HasPrefix(message, "Repeater:") {
+		messagePieces := strings.Split(message, ":")
+		if messagePieces[1] == "To" {
+			log.Printf("Sending burp repeater to specific client: %s", messagePieces[2])
+			r.clients[messagePieces[2]] <- "Repeater:" + strings.Join(messagePieces[3:], ":")
+		} else {
+			log.Printf("sending burp repeater to all client from %s \n", sendingClient)
+			for clientName, wc := range r.clients {
+				if sendingClient != clientName {
+					go func(wc chan<- string) {
+						wc <- "Repeater:" + strings.Join(messagePieces[1:], ":")
+					}(wc)
+				}
+			}
+		}
+	} else if strings.HasPrefix(message, "Intruder:") {
+		messagePieces := strings.Split(message, ":")
+		if messagePieces[1] == "To" {
+			log.Printf("Sending burp intruder to specific client: %s", messagePieces[2])
+			r.clients[messagePieces[2]] <- "Intruder:" + strings.Join(messagePieces[3:], ":")
+		} else {
+			log.Printf("sending burp intruder to all client from %s \n", sendingClient)
+			for clientName, wc := range r.clients {
+				if sendingClient != clientName {
+					go func(wc chan<- string) {
+						wc <- "Intruder:" + strings.Join(messagePieces[1:], ":")
+					}(wc)
+				}
+			}
+		}
+	} else if strings.HasPrefix(message, "To:") {
+		messagePieces := strings.Split(message, ":")
+		log.Printf("Sending burp request to specific client: %s", messagePieces[1])
+		r.clients[messagePieces[1]] <- strings.Join(messagePieces[1:], ":")
 	} else {
 		log.Printf("sending client %s \n", sendingClient)
 		for clientName, wc := range r.clients {
