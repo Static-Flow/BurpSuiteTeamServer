@@ -4,13 +4,15 @@ import (
 	"bufio"
 	"io"
 	"log"
+	"strings"
 )
 
 //client type represents a chat client
 type client struct {
 	*bufio.Reader
 	*bufio.Writer
-	wc chan string
+	wc           chan string
+	mutedClients []string
 }
 
 /*
@@ -19,7 +21,7 @@ type client struct {
 	second argument is a readwritercloser representing a connection at which the client is communicating
 	third argument is a quit channel. If a signal is passed through this channel, the client closes.
 */
-func StartClient(name string, mode string, msgCh chan<- string, cn io.ReadWriteCloser, roomName string) (chan<- string, <-chan struct{}) {
+func StartClient(name string, mode string, msgCh chan<- string, cn io.ReadWriteCloser, roomName string) (*client, <-chan struct{}) {
 	c := new(client)
 	c.Reader = bufio.NewReader(cn)
 	c.Writer = bufio.NewWriter(cn)
@@ -36,6 +38,14 @@ func StartClient(name string, mode string, msgCh chan<- string, cn io.ReadWriteC
 				log.Println(scanner.Text())
 				if scanner.Text() == "bye" {
 					break
+				} else if strings.HasPrefix(scanner.Text(), "mute") {
+					mutedClient := strings.Split(scanner.Text(), ":")[1]
+					c.mutedClients = append(c.mutedClients, mutedClient)
+					log.Printf("%s muted %s", name, mutedClient)
+				} else if strings.HasPrefix(scanner.Text(), "unmute") {
+					unmutedClient := strings.Split(scanner.Text(), ":")[1]
+					c.mutedClients = remove(c.mutedClients, index(c.mutedClients, unmutedClient))
+					log.Printf("%s unmuted %s", name, unmutedClient)
 				} else {
 					msg := name + ":" + scanner.Text() + "\n"
 					log.Printf("New message: %s|%s", roomName, name)
@@ -56,7 +66,22 @@ func StartClient(name string, mode string, msgCh chan<- string, cn io.ReadWriteC
 		//setup the writer
 		c.writeMonitor()
 	}
-	return c.wc, channelDone
+	return c, channelDone
+}
+
+func remove(s []string, i int) []string {
+	s[i] = s[len(s)-1]
+	return s[:len(s)-1]
+}
+
+func index(vs []string, t string) int {
+
+	for i, v := range vs {
+		if v == t {
+			return i
+		}
+	}
+	return -1
 }
 
 func (c *client) writeMonitor() {

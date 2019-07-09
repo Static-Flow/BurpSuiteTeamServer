@@ -10,9 +10,10 @@ import (
 
 //Room type represents a chat room
 type Room struct {
+	scope   []string
 	name    string
 	Msgch   chan string
-	clients map[string]chan<- string
+	clients map[string]*client
 	//signals the quitting of the chat room
 	Quit chan struct{}
 	*sync.RWMutex
@@ -25,7 +26,7 @@ func CreateRoom(rname string) *Room {
 		name:    rname,
 		Msgch:   make(chan string),
 		RWMutex: new(sync.RWMutex),
-		clients: make(map[string]chan<- string),
+		clients: make(map[string]*client),
 		Quit:    make(chan struct{}),
 	}
 	r.Run()
@@ -67,7 +68,7 @@ func (r *Room) RemoveClientSync(name string) {
 	for _, wc := range r.clients {
 		go func(wc chan<- string) {
 			wc <- "leavingroommate:" + name + "\n"
-		}(wc)
+		}(wc.wc)
 	}
 }
 
@@ -116,50 +117,61 @@ func (r *Room) broadcastMsg(msg string) {
 		for _, wc := range r.clients {
 			go func(wc chan<- string) {
 				wc <- "roommates:" + strings.Join(strkeys, ",") + "\n"
-			}(wc)
+			}(wc.wc)
 		}
 	} else if strings.HasPrefix(message, "Repeater:") {
 		messagePieces := strings.Split(message, ":")
 		if messagePieces[1] == "To" {
-			log.Printf("Sending burp repeater to specific client: %s", messagePieces[2])
-			r.clients[messagePieces[2]] <- "Repeater:" + strings.Join(messagePieces[3:], ":")
+			if index(r.clients[messagePieces[2]].mutedClients, sendingClient) == -1 {
+				log.Printf("Sending burp repeater to specific client: %s", messagePieces[2])
+				r.clients[messagePieces[2]].wc <- "Repeater:" + strings.Join(messagePieces[3:], ":")
+			}
 		} else {
 			log.Printf("sending burp repeater to all client from %s \n", sendingClient)
 			for clientName, wc := range r.clients {
-				if sendingClient != clientName {
-					go func(wc chan<- string) {
-						wc <- "Repeater:" + strings.Join(messagePieces[1:], ":")
-					}(wc)
+				if index(wc.mutedClients, sendingClient) == -1 {
+					if sendingClient != clientName {
+						go func(wc chan<- string) {
+							wc <- "Repeater:" + strings.Join(messagePieces[1:], ":")
+						}(wc.wc)
+					}
 				}
 			}
 		}
 	} else if strings.HasPrefix(message, "Intruder:") {
 		messagePieces := strings.Split(message, ":")
 		if messagePieces[1] == "To" {
-			log.Printf("Sending burp intruder to specific client: %s", messagePieces[2])
-			r.clients[messagePieces[2]] <- "Intruder:" + strings.Join(messagePieces[3:], ":")
+			if index(r.clients[messagePieces[2]].mutedClients, sendingClient) == -1 {
+				log.Printf("Sending burp intruder to specific client: %s", messagePieces[2])
+				r.clients[messagePieces[2]].wc <- "Intruder:" + strings.Join(messagePieces[3:], ":")
+			}
 		} else {
 			log.Printf("sending burp intruder to all client from %s \n", sendingClient)
 			for clientName, wc := range r.clients {
-				if sendingClient != clientName {
-					go func(wc chan<- string) {
-						wc <- "Intruder:" + strings.Join(messagePieces[1:], ":")
-					}(wc)
+				if index(wc.mutedClients, sendingClient) == -1 {
+					if sendingClient != clientName {
+						go func(wc chan<- string) {
+							wc <- "Intruder:" + strings.Join(messagePieces[1:], ":")
+						}(wc.wc)
+					}
 				}
 			}
 		}
 	} else if strings.HasPrefix(message, "To:") {
 		messagePieces := strings.Split(message, ":")
-		log.Printf("Sending burp request to specific client: %s", messagePieces[1])
-		r.clients[messagePieces[1]] <- strings.Join(messagePieces[1:], ":")
+		if index(r.clients[messagePieces[2]].mutedClients, sendingClient) == -1 {
+			log.Printf("Sending burp request to specific client: %s", messagePieces[1])
+			r.clients[messagePieces[1]].wc <- strings.Join(messagePieces[1:], ":")
+		}
 	} else {
 		log.Printf("sending client %s \n", sendingClient)
 		for clientName, wc := range r.clients {
-			log.Printf("%s : %s = %t", sendingClient, clientName, sendingClient == clientName)
 			if sendingClient != clientName {
-				go func(wc chan<- string) {
-					wc <- msg
-				}(wc)
+				if index(wc.mutedClients, sendingClient) == -1 {
+					go func(wc chan<- string) {
+						wc <- msg
+					}(wc.wc)
+				}
 			}
 		}
 	}

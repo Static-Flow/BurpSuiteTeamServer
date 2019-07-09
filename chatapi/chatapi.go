@@ -43,8 +43,15 @@ func New() *ChatAPI {
 		}
 		os.Exit(0)
 	}()
-
 	return api
+}
+
+func (cAPI *ChatAPI) GetRoomMembers(roomName string) map[string]*client {
+	return cAPI.rooms[roomName].clients
+}
+
+func (cAPI *ChatAPI) GetRooms() map[string]*Room {
+	return cAPI.rooms
 }
 
 //AddClient adds a new client to the chat server. Expects a JSON file
