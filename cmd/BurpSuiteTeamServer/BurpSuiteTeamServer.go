@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/Static-Flow/BurpSuiteTeamServer/authentication"
 	"github.com/Static-Flow/BurpSuiteTeamServer/chatapi"
 	"github.com/gorilla/mux"
 	"log"
@@ -39,7 +41,9 @@ func handleRooms(api *chatapi.ChatAPI) http.HandlerFunc {
 		for k := range roomMap {
 			keys = append(keys, k)
 		}
-		fmt.Fprintln(w, keys)
+		w.Header().Set("Content-Type", "application/json")
+		jsonResponse, _ := json.Marshal(keys)
+		fmt.Fprintln(w, string(jsonResponse))
 	}
 }
 
@@ -73,13 +77,16 @@ func main() {
 		port = "8989"
 	}
 	tcpAddr := flag.String("tcp", "0.0.0.0:"+port, "Address for the TCP chat server to listen on")
+	serverPassword := flag.String("serverPassword", "", "Server Password, default is none")
+	serverUsername := flag.String("serverUsername", "", "Server Username, default is none")
 	flag.Parse()
-	api := chatapi.New()
+	api := chatapi.New(*serverPassword)
+	authenticationWrapper := authentication.New(*serverUsername, *serverPassword)
 	go func() {
 		r := mux.NewRouter()
-		r.Handle("/rooms/{name}", handleRoomMembers(api))
-		r.Handle("/rooms", handleRooms(api))
-		r.PathPrefix("/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("../../static"))))
+		r.Handle("/rooms/{name}", authenticationWrapper.WrapHandler(handleRoomMembers(api)))
+		r.Handle("/rooms", authenticationWrapper.WrapHandler(handleRooms(api)))
+		r.PathPrefix("/").Handler(http.FileServer(http.Dir("../../static")))
 		http.ListenAndServe(":8888", r)
 	}()
 	if err := RunTCPWithExistingAPI(*tcpAddr, api); err != nil {

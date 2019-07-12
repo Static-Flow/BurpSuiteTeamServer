@@ -1,6 +1,7 @@
 package chatapi
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,19 +15,21 @@ import (
 type ChatAPI struct {
 	rooms map[string]*Room
 	*sync.RWMutex
+	ServerPassword string
 }
 
 type clientInfo struct {
-	Room string `json:"room"`
-	Name string `json:"name"`
-	Mode string `json:"mode"`
+	Room     string `json:"room"`
+	Name     string `json:"name"`
+	Password string `json:"password"`
 }
 
 //New start a new instance of the new chat api
-func New() *ChatAPI {
+func New(serverPassword string) *ChatAPI {
 	api := &ChatAPI{
-		rooms:   make(map[string]*Room),
-		RWMutex: new(sync.RWMutex),
+		rooms:          make(map[string]*Room),
+		RWMutex:        new(sync.RWMutex),
+		ServerPassword: serverPassword,
 	}
 	//handle shutdown
 	go func() {
@@ -47,7 +50,11 @@ func New() *ChatAPI {
 }
 
 func (cAPI *ChatAPI) GetRoomMembers(roomName string) map[string]*client {
-	return cAPI.rooms[roomName].clients
+	if val, ok := cAPI.rooms[roomName]; ok {
+		return val.clients
+	} else {
+		return make(map[string]*client)
+	}
 }
 
 func (cAPI *ChatAPI) GetRooms() map[string]*Room {
@@ -56,21 +63,42 @@ func (cAPI *ChatAPI) GetRooms() map[string]*Room {
 
 //AddClient adds a new client to the chat server. Expects a JSON file
 func (cAPI *ChatAPI) AddClient(c io.ReadWriteCloser) {
-	cinfo := new(clientInfo)
-	if err := json.NewDecoder(c).Decode(cinfo); err != nil {
-		log.Printf("Could not create chat room, invalid chat room name, error: %s \n", err)
-	} else {
-		cAPI.handleClient(cinfo, c)
+	msg := NewBurpTCMessage()
+	responseMessage := NewBurpTCMessage()
+	if err := json.NewDecoder(c).Decode(&msg); err != nil {
+		log.Printf("Could not decode message, error: %s \n", err)
+	} else if msg.MessageType == "LOGIN_MESSAGE" {
+		writer := bufio.NewWriter(c)
+		log.Println(msg)
+		if msg.AuthenticationString == cAPI.ServerPassword {
+			log.Println("login successful")
+			responseMessage.AuthenticationString = "SUCCESS"
+			log.Println(responseMessage)
+			writer.WriteString(SendMessage(*responseMessage))
+			writer.Flush()
+			cAPI.handleClient(msg, c)
+		} else {
+			log.Println("login failed")
+			responseMessage.AuthenticationString = "FAILED"
+			writer.WriteString(SendMessage(*responseMessage))
+			writer.Flush()
+			c.Close()
+		}
 	}
 }
 
-func (cAPI *ChatAPI) handleClient(cinfo *clientInfo, c io.ReadWriteCloser) {
+func SendMessage(messageToSend BurpTCMessage) string {
+	jsonMsg, _ := json.Marshal(messageToSend)
+	return string(jsonMsg) + "\n"
+}
+
+func (cAPI *ChatAPI) handleClient(clientMsg *BurpTCMessage, c io.ReadWriteCloser) {
 	cAPI.Lock()
 	defer cAPI.Unlock()
-	r, ok := cAPI.rooms[cinfo.Room]
+	r, ok := cAPI.rooms[clientMsg.RoomName]
 	if !ok {
-		r = CreateRoom(cinfo.Room)
+		r = CreateRoom(clientMsg.RoomName)
 	}
-	r.AddClient(c, cinfo.Name, cinfo.Mode)
-	cAPI.rooms[cinfo.Room] = r
+	r.AddClient(c, clientMsg.SendingUser, cAPI.ServerPassword)
+	cAPI.rooms[clientMsg.RoomName] = r
 }
