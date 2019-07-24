@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"strings"
 	//"strings"
 )
 
@@ -12,8 +13,10 @@ import (
 type client struct {
 	*bufio.Reader
 	*bufio.Writer
-	wc           chan string
-	mutedClients []string
+	wc            chan string
+	mutedClients  []string
+	outputChannel chan<- BurpTCMessage
+	Name          string
 }
 
 /*
@@ -22,8 +25,10 @@ type client struct {
 	second argument is a readwritercloser representing a connection at which the client is communicating
 	third argument is a quit channel. If a signal is passed through this channel, the client closes.
 */
-func StartClient(serverPassword string, msgCh chan<- BurpTCMessage, cn io.ReadWriteCloser, roomName string) (*client, <-chan struct{}) {
+func StartClient(clientName string, chatApi *ChatAPI, msgCh chan<- BurpTCMessage, cn io.ReadWriteCloser, roomName string) (*client, <-chan struct{}) {
 	c := new(client)
+	c.outputChannel = msgCh
+	c.Name = clientName
 	c.Reader = bufio.NewReader(cn)
 	c.Writer = bufio.NewWriter(cn)
 	c.wc = make(chan string)
@@ -35,11 +40,27 @@ func StartClient(serverPassword string, msgCh chan<- BurpTCMessage, cn io.ReadWr
 		scanner.Buffer(buf, 8192*8192)
 	Scanner:
 		for scanner.Scan() {
+			log.Printf("scan buffer: %s", scanner.Text())
 			msg := NewBurpTCMessage()
-			if err := json.Unmarshal([]byte(scanner.Text()), &msg); err != nil {
+			var decryptedMessage string
+			if roomName == "server" {
+				decryptedMessage = chatApi.serverRoom.crypter.Decrypt(scanner.Text())
+			} else {
+				decryptedMessage = chatApi.rooms[roomName].crypter.Decrypt(scanner.Text())
+			}
+			if err := json.Unmarshal([]byte(decryptedMessage), &msg); err != nil {
 				log.Printf("Could not decode BurpTCMessage, error: %s \n", err)
-			} else if msg.AuthenticationString == serverPassword {
+			} else {
 				switch msg.MessageType {
+				case "JOIN_ROOM_MESSAGE":
+					log.Printf("%s joining room: %s", msg.SendingUser, msg.RoomName)
+					chatApi.moveClientToRoom(c, roomName, msg.RoomName)
+				case "LEAVE_ROOM_MESSAGE":
+					log.Printf("leaving room: %s", msg.RoomName)
+					chatApi.removeClientFromRoom(c, msg.RoomName)
+				case "ADD_ROOM_MESSAGE":
+					log.Printf("creating new room: %s", msg.RoomName)
+					chatApi.moveClientToRoom(c, roomName, msg.RoomName)
 				case "QUIT_MESSAGE":
 					log.Printf("client %s quitting", msg.SendingUser)
 					break Scanner
@@ -54,12 +75,21 @@ func StartClient(serverPassword string, msgCh chan<- BurpTCMessage, cn io.ReadWr
 				case "INTRUDER_MESSAGE":
 					fallthrough
 				case "BURP_MESSAGE":
-					msgCh <- *msg
+					c.outputChannel <- *msg
+				case "GET_ROOMS_MESSAGE":
+					rooms := chatApi.GetRooms()
+					keys := make([]string, 0, len(rooms))
+					for k := range rooms {
+						keys = append(keys, k)
+					}
+					msg.Data = strings.Join(keys, ",")
+					c.outputChannel <- *msg
 				default:
 					log.Println("ERROR: unknown message type")
 				}
 			}
 		}
+		chatApi.removeClientFromRooms(c)
 		close(channelDone)
 		cn.Close()
 		if err := scanner.Err(); err != nil {
@@ -69,6 +99,10 @@ func StartClient(serverPassword string, msgCh chan<- BurpTCMessage, cn io.ReadWr
 
 	c.writeMonitor()
 	return c, channelDone
+}
+
+func (c *client) changeChannel(newChannel chan<- BurpTCMessage) {
+	c.outputChannel = newChannel
 }
 
 func remove(s []string, i int) []string {

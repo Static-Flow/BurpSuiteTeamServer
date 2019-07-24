@@ -8,28 +8,24 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 )
 
 type ChatAPI struct {
-	rooms map[string]*Room
+	rooms      map[string]*Room
+	serverRoom *Room
 	*sync.RWMutex
 	ServerPassword string
 }
 
-type clientInfo struct {
-	Room     string `json:"room"`
-	Name     string `json:"name"`
-	Password string `json:"password"`
-}
-
 //New start a new instance of the new chat api
-func New(serverPassword string) *ChatAPI {
+func New(crypter AESCrypter) *ChatAPI {
 	api := &ChatAPI{
-		rooms:          make(map[string]*Room),
-		RWMutex:        new(sync.RWMutex),
-		ServerPassword: serverPassword,
+		rooms:      make(map[string]*Room),
+		serverRoom: CreateRoom("server", crypter),
+		RWMutex:    new(sync.RWMutex),
 	}
 	//handle shutdown
 	go func() {
@@ -63,33 +59,83 @@ func (cAPI *ChatAPI) GetRooms() map[string]*Room {
 
 //AddClient adds a new client to the chat server. Expects a JSON file
 func (cAPI *ChatAPI) AddClient(c io.ReadWriteCloser) {
+	log.Println("Adding client")
 	msg := NewBurpTCMessage()
-	responseMessage := NewBurpTCMessage()
-	if err := json.NewDecoder(c).Decode(&msg); err != nil {
-		log.Printf("Could not decode message, error: %s \n", err)
-	} else if msg.MessageType == "LOGIN_MESSAGE" {
-		writer := bufio.NewWriter(c)
-		log.Println(msg)
-		if msg.AuthenticationString == cAPI.ServerPassword {
-			log.Println("login successful")
-			responseMessage.AuthenticationString = "SUCCESS"
-			log.Println(responseMessage)
-			writer.WriteString(SendMessage(*responseMessage))
-			writer.Flush()
-			cAPI.handleClient(msg, c)
-		} else {
-			log.Println("login failed")
-			responseMessage.AuthenticationString = "FAILED"
-			writer.WriteString(SendMessage(*responseMessage))
-			writer.Flush()
-			c.Close()
+	scanner := bufio.NewScanner(c)
+	buf := make([]byte, 0, 8192*8192)
+	scanner.Buffer(buf, 8192*8192)
+	scanner.Scan()
+	log.Printf("scan buffer: %s", scanner.Text())
+	decryptedMessage := cAPI.serverRoom.crypter.Decrypt(scanner.Text())
+	if err := json.Unmarshal([]byte(decryptedMessage), &msg); err != nil {
+		log.Printf("Could not decode encrypted message, error: %s \n", err)
+		c.Close()
+	} else {
+		log.Printf("decrypted message: %+v\n", msg)
+		responseMessage := NewBurpTCMessage()
+		if msg.MessageType == "LOGIN_MESSAGE" {
+			writer := bufio.NewWriter(c)
+			if msg.AuthenticationString == cAPI.serverRoom.crypter.aesKey {
+				log.Println("login successful")
+				responseMessage.AuthenticationString = "SUCCESS"
+				log.Println(responseMessage)
+				writer.WriteString(SendMessage(*responseMessage, cAPI.serverRoom.crypter))
+				writer.Flush()
+				cAPI.addClientToServer(msg, c)
+			} else {
+				log.Println("login failed")
+				responseMessage.AuthenticationString = "FAILED"
+				writer.WriteString(SendMessage(*responseMessage, cAPI.serverRoom.crypter))
+				writer.Flush()
+				c.Close()
+			}
 		}
 	}
 }
 
-func SendMessage(messageToSend BurpTCMessage) string {
+func (cAPI *ChatAPI) updateRooms() {
+	msg := NewBurpTCMessage()
+	msg.MessageType = "GET_ROOMS_MESSAGE"
+
+	keys := make([]string, 0, len(cAPI.rooms))
+	for k := range cAPI.rooms {
+		keys = append(keys, k)
+	}
+	log.Printf("Current rooms: %s", strings.Join(keys, ","))
+	msg.Data = strings.Join(keys, ",")
+	for _, wc := range cAPI.serverRoom.clients {
+		go func(wc chan<- string) {
+			wc <- SendMessage(*msg, cAPI.serverRoom.crypter)
+		}(wc.wc)
+	}
+}
+
+func (cAPI *ChatAPI) moveClientToRoom(client *client, currentRoom string, newRoom string) {
+	cAPI.Lock()
+	defer cAPI.Unlock()
+	r, ok := cAPI.rooms[newRoom]
+	if !ok {
+		r = CreateRoom(newRoom, cAPI.serverRoom.crypter)
+		cAPI.rooms[newRoom] = r
+	}
+	if currentRoom != "server" {
+		cAPI.rooms[currentRoom].RemoveClientSync(client.Name)
+		client.changeChannel(cAPI.serverRoom.Msgch)
+	} else {
+		cAPI.serverRoom.RemoveClientSync(client.Name)
+		client.changeChannel(r.Msgch)
+	}
+	r.AddExistingClient(client)
+	cAPI.updateRooms()
+}
+
+func (cAPI *ChatAPI) addClientToServer(clientMsg *BurpTCMessage, c io.ReadWriteCloser) {
+	cAPI.serverRoom.AddClient(c, clientMsg.SendingUser, cAPI)
+}
+
+func SendMessage(messageToSend BurpTCMessage, crypter AESCrypter) string {
 	jsonMsg, _ := json.Marshal(messageToSend)
-	return string(jsonMsg) + "\n"
+	return crypter.Encrypt(string(jsonMsg)) + "\n"
 }
 
 func (cAPI *ChatAPI) handleClient(clientMsg *BurpTCMessage, c io.ReadWriteCloser) {
@@ -97,8 +143,28 @@ func (cAPI *ChatAPI) handleClient(clientMsg *BurpTCMessage, c io.ReadWriteCloser
 	defer cAPI.Unlock()
 	r, ok := cAPI.rooms[clientMsg.RoomName]
 	if !ok {
-		r = CreateRoom(clientMsg.RoomName)
+		r = CreateRoom(clientMsg.RoomName, *NewAESCrypter())
 	}
-	r.AddClient(c, clientMsg.SendingUser, cAPI.ServerPassword)
+	r.AddClient(c, clientMsg.SendingUser, cAPI)
 	cAPI.rooms[clientMsg.RoomName] = r
+}
+
+func (cAPI *ChatAPI) removeClientFromRooms(c *client) {
+	for room := range cAPI.rooms {
+		cAPI.rooms[room].RemoveClientSync(c.Name)
+	}
+	cAPI.updateRooms()
+}
+
+func (cAPI *ChatAPI) removeClientFromRoom(c *client, roomName string) {
+	cAPI.Lock()
+	defer cAPI.Unlock()
+	cAPI.rooms[roomName].RemoveClientSync(c.Name)
+	log.Printf("clients: %d", len(cAPI.rooms[roomName].clients))
+	if len(cAPI.rooms[roomName].clients) == 0 {
+		close(cAPI.rooms[roomName].Quit)
+		delete(cAPI.rooms, roomName)
+	}
+	cAPI.serverRoom.AddExistingClient(c)
+	cAPI.updateRooms()
 }

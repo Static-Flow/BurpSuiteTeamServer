@@ -17,10 +17,11 @@ type Room struct {
 	//signals the quitting of the chat room
 	Quit chan struct{}
 	*sync.RWMutex
+	crypter AESCrypter
 }
 
 //CreateRoom starts a new chat room with name rname
-func CreateRoom(rname string) *Room {
+func CreateRoom(rname string, aesCrypter AESCrypter) *Room {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	r := &Room{
 		name:    rname,
@@ -28,13 +29,14 @@ func CreateRoom(rname string) *Room {
 		RWMutex: new(sync.RWMutex),
 		clients: make(map[string]*client),
 		Quit:    make(chan struct{}),
+		crypter: aesCrypter,
 	}
 	r.Run()
 	return r
 }
 
 //AddClient adds a new client to the chat room
-func (r *Room) AddClient(c io.ReadWriteCloser, clientname string, serverPassword string) {
+func (r *Room) AddClient(c io.ReadWriteCloser, clientname string, chatApi *ChatAPI) {
 	r.Lock()
 	defer r.Unlock()
 	if _, ok := r.clients[clientname]; ok {
@@ -42,12 +44,20 @@ func (r *Room) AddClient(c io.ReadWriteCloser, clientname string, serverPassword
 		return
 	} else {
 		log.Printf("Adding client %s \n", clientname)
-		wc, done := StartClient(serverPassword, r.Msgch, c, r.name)
+		wc, done := StartClient(clientname, chatApi, r.Msgch, c, r.name)
 		r.clients[clientname] = wc
 		go func() {
 			<-done
 			r.RemoveClientSync(clientname)
 		}()
+	}
+}
+
+func (r *Room) AddExistingClient(client *client) {
+	r.Lock()
+	defer r.Unlock()
+	r.clients[client.Name] = client
+	if r.name != "server" {
 		r.updateRoomMembers()
 	}
 }
@@ -60,11 +70,11 @@ func (r *Room) updateRoomMembers() {
 	for i := 0; i < len(keys); i++ {
 		strkeys[i] = keys[i].String()
 	}
-	log.Printf("Current clients: %s", strings.Join(strkeys, ","))
+	log.Printf("Current clients in room %s: %s", r.name, strings.Join(strkeys, ","))
 	msg.Data = strings.Join(strkeys, ",")
 	for _, wc := range r.clients {
 		go func(wc chan<- string) {
-			wc <- SendMessage(*msg)
+			wc <- SendMessage(*msg, r.crypter)
 		}(wc.wc)
 	}
 }
@@ -76,7 +86,6 @@ func (r *Room) ClCount() int {
 
 //RemoveClientSync removes a client from the chat room. This is a blocking call
 func (r *Room) RemoveClientSync(name string) {
-	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	r.Lock()
 	defer r.Unlock()
 	delete(r.clients, name)
@@ -102,6 +111,7 @@ func (r *Room) Run() {
 
 //CloseChatRoomSync closes a chat room. This is a blocking call
 func (r *Room) CloseChatRoomSync() {
+	log.Printf("Closing room: %s", r.name)
 	r.Lock()
 	defer r.Unlock()
 	close(r.Msgch)
@@ -110,20 +120,26 @@ func (r *Room) CloseChatRoomSync() {
 	}
 }
 
+func (r *Room) broadcastServerMsg(msg BurpTCMessage) {
+
+}
+
 //fan out is used to distribute the chat message
 func (r *Room) broadcastMsg(msg BurpTCMessage) {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	r.RLock()
 	defer r.RUnlock()
-	log.Printf("Sending message from %s to %s", msg.SendingUser, msg.MessageTarget)
-	if msg.MessageTarget != "room" {
-		r.clients[msg.MessageTarget].wc <- SendMessage(msg)
+	log.Printf("Sending message from %s to %s in room: %s", msg.SendingUser, msg.MessageTarget, r.name)
+	if msg.MessageTarget == "me" {
+		r.clients[msg.SendingUser].wc <- SendMessage(msg, r.crypter)
+	} else if msg.MessageTarget != "room" {
+		r.clients[msg.MessageTarget].wc <- SendMessage(msg, r.crypter)
 	} else {
 		for clientName, wc := range r.clients {
 			if index(wc.mutedClients, msg.SendingUser) == -1 {
 				if msg.SendingUser != clientName {
 					go func(wc chan<- string) {
-						wc <- SendMessage(msg)
+						wc <- SendMessage(msg, r.crypter)
 					}(wc.wc)
 				}
 			}
