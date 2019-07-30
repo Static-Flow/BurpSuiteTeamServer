@@ -52,15 +52,27 @@ func StartClient(clientName string, chatApi *ChatAPI, msgCh chan<- BurpTCMessage
 				log.Printf("Could not decode BurpTCMessage, error: %s \n", err)
 			} else {
 				switch msg.MessageType {
+				case "SYNC_SCOPE_MESSAGE":
+					if msg.MessageTarget != "me" {
+						log.Printf("new scope from: %s", msg.SendingUser)
+						chatApi.rooms[roomName].Scope = msg.Data
+					} else {
+						log.Printf("%s requesting scope", msg.SendingUser)
+						msg.Data = chatApi.rooms[roomName].Scope
+					}
+					c.outputChannel <- *msg
 				case "JOIN_ROOM_MESSAGE":
 					log.Printf("%s joining room: %s", msg.SendingUser, msg.RoomName)
 					chatApi.moveClientToRoom(c, roomName, msg.RoomName)
+					roomName = msg.RoomName
 				case "LEAVE_ROOM_MESSAGE":
 					log.Printf("leaving room: %s", msg.RoomName)
+					roomName = "server"
 					chatApi.removeClientFromRoom(c, msg.RoomName)
 				case "ADD_ROOM_MESSAGE":
 					log.Printf("creating new room: %s", msg.RoomName)
 					chatApi.moveClientToRoom(c, roomName, msg.RoomName)
+					roomName = msg.RoomName
 				case "QUIT_MESSAGE":
 					log.Printf("client %s quitting", msg.SendingUser)
 					break Scanner
