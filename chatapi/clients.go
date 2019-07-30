@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"reflect"
 	"strings"
 	//"strings"
 )
@@ -77,10 +78,32 @@ func StartClient(clientName string, chatApi *ChatAPI, msgCh chan<- BurpTCMessage
 					log.Printf("client %s quitting", msg.SendingUser)
 					break Scanner
 				case "MUTE_MESSAGE":
-					c.mutedClients = append(c.mutedClients, msg.MessageTarget)
-					log.Printf("%s muted %s", msg.SendingUser, msg.MessageTarget)
+					if msg.MessageTarget == "all" {
+						keys := reflect.ValueOf(chatApi.rooms[roomName].clients).MapKeys()
+						for i := 0; i < len(keys); i++ {
+							key := keys[i].String()
+							if key != msg.SendingUser {
+								c.mutedClients = append(c.mutedClients, key)
+							}
+						}
+						log.Printf("Clients to mute %s", keys)
+					} else {
+						log.Printf("Client to mute %s", msg.MessageTarget)
+						c.mutedClients = append(c.mutedClients, msg.MessageTarget)
+					}
+					log.Printf("%s muted these clients %s", msg.SendingUser, c.mutedClients)
 				case "UNMUTE_MESSAGE":
-					c.mutedClients = remove(c.mutedClients, index(c.mutedClients, msg.MessageTarget))
+					if msg.MessageTarget == "all" {
+						keys := reflect.ValueOf(chatApi.rooms[roomName].clients).MapKeys()
+						for i := 0; i < len(keys); i++ {
+							key := keys[i].String()
+							if key != msg.SendingUser {
+								c.mutedClients = remove(c.mutedClients, index(c.mutedClients, keys[i].String()))
+							}
+						}
+					} else {
+						c.mutedClients = remove(c.mutedClients, index(c.mutedClients, msg.MessageTarget))
+					}
 					log.Printf("%s unmuted %s", msg.SendingUser, msg.MessageTarget)
 				case "REPEATER_MESSAGE":
 					fallthrough

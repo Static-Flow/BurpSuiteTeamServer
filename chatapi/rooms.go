@@ -82,11 +82,6 @@ func (r *Room) updateRoomMembers() {
 	}
 }
 
-//ClCount returns the number of clients in a chat room
-func (r *Room) ClCount() int {
-	return len(r.clients)
-}
-
 //RemoveClientSync removes a client from the chat room. This is a blocking call
 func (r *Room) RemoveClientSync(name string) {
 	r.Lock()
@@ -121,10 +116,6 @@ func (r *Room) CloseChatRoomSync() {
 	for name := range r.clients {
 		delete(r.clients, name)
 	}
-}
-
-func (r *Room) broadcastServerMsg(msg BurpTCMessage) {
-
 }
 
 //fan out is used to distribute the chat message
