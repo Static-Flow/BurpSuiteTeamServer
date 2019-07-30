@@ -1,3 +1,28 @@
-This acts as the server for the BurpSuite TeamServer Plugin. It shuffles messages between the clients through simple chat rooms. 
+# BurpSuite-Team-Server
 
-Built upon the chat server at ***MaChat by minaandrawos (https://github.com/minaandrawos/machat)***
+This repository holds the code for the server side of the Burpsuite Team Collaborator tool found here https://github.com/Static-Flow/BurpSuite-Team-Extension. It is loosely built upon the chat server at ***MaChat by minaandrawos (https://github.com/minaandrawos/machat)***.
+
+# Features
+
+  + Multiple room support
+  
+  + AES encryption between server and client with server generated AES key
+  
+  + Seperate room scopes
+  
+  + More to come!
+  
+# How to start the Server
+
+```
+git clone https://github.com/Static-Flow/BurpSuiteTeamServer.git
+cd BurpSuiteTeamServer/cmd/BurpSuiteTeamServer
+go build
+./BurpSuiteTeamServer
+```
+Output:
+```
+This is the server key that clients need to login: <Server key>
+Starting chat room server
+Awaiting Clients...
+  
