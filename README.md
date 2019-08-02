@@ -1,6 +1,6 @@
 # BurpSuite-Team-Server
 
-This repository holds the code for the server side of the Burpsuite Team Collaborator tool found here https://github.com/Static-Flow/BurpSuite-Team-Extension. It is loosely built upon the chat server at ***MaChat by minaandrawos (https://github.com/minaandrawos/machat)***.
+This repository holds the code for the server side of the Burpsuite Team Collaborator tool found here https://github.com/GDSSecurity/BurpSuite-Team-Extension. It is loosely built upon the chat server at ***MaChat by minaandrawos (https://github.com/minaandrawos/machat)***.
 
 # Features
 
@@ -15,7 +15,7 @@ This repository holds the code for the server side of the Burpsuite Team Collabo
 # How to start the Server
 
 ```
-git clone https://github.com/Static-Flow/BurpSuiteTeamServer.git
+git clone https://github.com/GDSSecurity/BurpSuiteTeamServer.git
 cd BurpSuiteTeamServer/cmd/BurpSuiteTeamServer
 go build
 ./BurpSuiteTeamServer
