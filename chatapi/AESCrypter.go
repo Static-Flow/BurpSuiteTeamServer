@@ -42,15 +42,19 @@ func (a AESCrypter) Encrypt(plaintext string) string {
 
 func (a AESCrypter) Decrypt(ct string) string {
 	encryptedData, _ := base64.StdEncoding.DecodeString(ct)
-	nonce := encryptedData[:aes.BlockSize]
-	ciphertext := encryptedData[aes.BlockSize:]
-	block, err := aes.NewCipher([]byte(a.aesKey))
-	if err != nil {
-		panic(err.Error())
+	if len(encryptedData) > aes.BlockSize {
+		nonce := encryptedData[:aes.BlockSize]
+		ciphertext := encryptedData[aes.BlockSize:]
+		block, err := aes.NewCipher([]byte(a.aesKey))
+		if err != nil {
+			panic(err.Error())
+		}
+		mode := cipher.NewCFBDecrypter(block, nonce)
+		mode.XORKeyStream(ciphertext, ciphertext)
+		return string(ciphertext)
+	} else {
+		return ""
 	}
-	mode := cipher.NewCFBDecrypter(block, nonce)
-	mode.XORKeyStream(ciphertext, ciphertext)
-	return string(ciphertext)
 }
 
 func randString(length int) string {

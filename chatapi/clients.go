@@ -109,6 +109,8 @@ func StartClient(clientName string, chatApi *ChatAPI, msgCh chan<- BurpTCMessage
 					fallthrough
 				case "INTRUDER_MESSAGE":
 					fallthrough
+				case "SYNC_ISSUE_MESSAGE":
+					fallthrough
 				case "BURP_MESSAGE":
 					c.outputChannel <- *msg
 				case "GET_ROOMS_MESSAGE":
