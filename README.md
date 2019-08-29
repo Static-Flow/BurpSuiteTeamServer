@@ -15,9 +15,9 @@ This repository holds the code for the server side of the Burpsuite Team Collabo
 # How to start the Server
 
 ```
-git clone https://github.com/Static-Flow/BurpSuiteTeamServer.git
-cd BurpSuiteTeamServer/cmd/BurpSuiteTeamServer
-go build
+go get github.com/Static-Flow/BurpSuiteTeamServer/cmd/BurpSuiteTeamServer
+cd ~/go/src/github.com/Static-Flow/BurpSuiteTeamServer/cmd/BurpSuiteTeamServer
+go build BurpSuiteTeamServer.go
 ./BurpSuiteTeamServer
 ```
 Output:
