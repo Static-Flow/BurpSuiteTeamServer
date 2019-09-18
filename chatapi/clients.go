@@ -3,6 +3,7 @@ package chatapi
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"reflect"
@@ -41,7 +42,6 @@ func StartClient(clientName string, chatApi *ChatAPI, msgCh chan<- BurpTCMessage
 		scanner.Buffer(buf, 8192*8192)
 	Scanner:
 		for scanner.Scan() {
-			log.Printf("scan buffer: %s", scanner.Text())
 			msg := NewBurpTCMessage()
 			var decryptedMessage string
 			if roomName == "server" {
@@ -61,7 +61,7 @@ func StartClient(clientName string, chatApi *ChatAPI, msgCh chan<- BurpTCMessage
 						log.Printf("%s requesting scope", msg.SendingUser)
 						msg.Data = chatApi.rooms[roomName].Scope
 					}
-					c.outputChannel <- *msg
+					writeToChannel(c.outputChannel, *msg)
 				case "JOIN_ROOM_MESSAGE":
 					log.Printf("%s joining room: %s", msg.SendingUser, msg.RoomName)
 					chatApi.moveClientToRoom(c, roomName, msg.RoomName)
@@ -105,14 +105,6 @@ func StartClient(clientName string, chatApi *ChatAPI, msgCh chan<- BurpTCMessage
 						c.mutedClients = remove(c.mutedClients, index(c.mutedClients, msg.MessageTarget))
 					}
 					log.Printf("%s unmuted %s", msg.SendingUser, msg.MessageTarget)
-				case "REPEATER_MESSAGE":
-					fallthrough
-				case "INTRUDER_MESSAGE":
-					fallthrough
-				case "SYNC_ISSUE_MESSAGE":
-					fallthrough
-				case "BURP_MESSAGE":
-					c.outputChannel <- *msg
 				case "GET_ROOMS_MESSAGE":
 					rooms := chatApi.GetRooms()
 					keys := make([]string, 0, len(rooms))
@@ -120,7 +112,17 @@ func StartClient(clientName string, chatApi *ChatAPI, msgCh chan<- BurpTCMessage
 						keys = append(keys, k)
 					}
 					msg.Data = strings.Join(keys, ",")
-					c.outputChannel <- *msg
+					writeToChannel(c.outputChannel, *msg)
+				case "COOKIE_MESSAGE":
+					fallthrough
+				case "SCAN_ISSUE_MESSAGE":
+					fallthrough
+				case "REPEATER_MESSAGE":
+					fallthrough
+				case "INTRUDER_MESSAGE":
+					fallthrough
+				case "BURP_MESSAGE":
+					writeToChannel(c.outputChannel, *msg)
 				default:
 					log.Println("ERROR: unknown message type")
 				}
@@ -136,6 +138,18 @@ func StartClient(clientName string, chatApi *ChatAPI, msgCh chan<- BurpTCMessage
 
 	c.writeMonitor()
 	return c, channelDone
+}
+
+func writeToChannel(channel chan<- BurpTCMessage, message BurpTCMessage) bool {
+	result := true
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Println(err)
+			result = false
+		}
+	}()
+	channel <- message
+	return result
 }
 
 func (c *client) changeChannel(newChannel chan<- BurpTCMessage) {
