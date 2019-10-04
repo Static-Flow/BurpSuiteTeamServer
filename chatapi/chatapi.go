@@ -46,6 +46,8 @@ func New(crypter AESCrypter) *ChatAPI {
 }
 
 func (cAPI *ChatAPI) GetRoomMembers(roomName string) map[string]*client {
+	cAPI.Lock()
+	defer cAPI.Unlock()
 	if val, ok := cAPI.rooms[roomName]; ok {
 		return val.clients
 	} else {
@@ -54,6 +56,8 @@ func (cAPI *ChatAPI) GetRoomMembers(roomName string) map[string]*client {
 }
 
 func (cAPI *ChatAPI) GetRooms() map[string]*Room {
+	cAPI.Lock()
+	defer cAPI.Unlock()
 	return cAPI.rooms
 }
 
@@ -77,11 +81,34 @@ func (cAPI *ChatAPI) AddClient(c io.ReadWriteCloser) {
 			writer := bufio.NewWriter(c)
 			if msg.AuthenticationString == cAPI.serverRoom.crypter.aesKey {
 				log.Println("login successful")
-				responseMessage.AuthenticationString = "SUCCESS"
-				log.Println(responseMessage)
-				writer.WriteString(SendMessage(*responseMessage, cAPI.serverRoom.crypter))
-				writer.Flush()
-				cAPI.addClientToServer(msg, c)
+				foundClient := false
+				if _, ok := cAPI.serverRoom.clients[msg.SendingUser]; ok {
+					log.Printf("Client %s already exist in chat room %s, pick a unique name",
+						msg.SendingUser, cAPI.serverRoom.Name)
+					foundClient = true
+				} else {
+					for _, room := range cAPI.rooms {
+						if _, ok := room.clients[msg.SendingUser]; ok {
+							log.Printf("Client %s already exist in chat room %s, pick a unique name",
+								msg.SendingUser, room.Name)
+							foundClient = true
+							break
+						}
+					}
+				}
+				log.Printf("Found client: %v", foundClient)
+				if foundClient {
+					responseMessage.AuthenticationString = "DUPLICATE"
+					log.Println(responseMessage)
+					writer.WriteString(SendMessage(*responseMessage, cAPI.serverRoom.crypter))
+					writer.Flush()
+				} else {
+					responseMessage.AuthenticationString = "SUCCESS"
+					log.Println(responseMessage)
+					writer.WriteString(SendMessage(*responseMessage, cAPI.serverRoom.crypter))
+					writer.Flush()
+					cAPI.addClientToServer(msg, c)
+				}
 			} else {
 				log.Println("login failed")
 				responseMessage.AuthenticationString = "FAILED"
@@ -94,6 +121,8 @@ func (cAPI *ChatAPI) AddClient(c io.ReadWriteCloser) {
 }
 
 func (cAPI *ChatAPI) updateRooms() {
+	cAPI.Lock()
+	defer cAPI.Unlock()
 	msg := NewBurpTCMessage()
 	msg.MessageType = "GET_ROOMS_MESSAGE"
 
@@ -130,6 +159,8 @@ func (cAPI *ChatAPI) moveClientToRoom(client *client, currentRoom string, newRoo
 }
 
 func (cAPI *ChatAPI) addClientToServer(clientMsg *BurpTCMessage, c io.ReadWriteCloser) {
+	cAPI.Lock()
+	defer cAPI.Unlock()
 	cAPI.serverRoom.AddClient(c, clientMsg.SendingUser, cAPI)
 }
 
@@ -150,6 +181,8 @@ func (cAPI *ChatAPI) handleClient(clientMsg *BurpTCMessage, c io.ReadWriteCloser
 }
 
 func (cAPI *ChatAPI) removeClientFromRooms(c *client) {
+	cAPI.Lock()
+	defer cAPI.Unlock()
 	for room := range cAPI.rooms {
 		cAPI.rooms[room].RemoveClientSync(c.Name)
 	}

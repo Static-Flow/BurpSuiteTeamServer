@@ -65,6 +65,8 @@ func (r *Room) AddExistingClient(client *client) {
 
 func (r *Room) updateRoomMembers() {
 	if r.Name != "server" {
+		r.Lock()
+		defer r.Unlock()
 		msg := NewBurpTCMessage()
 		msg.MessageType = "NEW_MEMBER_MESSAGE"
 		keys := reflect.ValueOf(r.clients).MapKeys()
@@ -90,7 +92,7 @@ func (r *Room) RemoveClientSync(name string) {
 	r.updateRoomMembers()
 }
 
-//Run runs a chat room
+//Run a chat room
 func (r *Room) Run() {
 	log.Println("Starting chat room", r.Name)
 	//handle the chat room BurpSuiteTeamServer message channel
