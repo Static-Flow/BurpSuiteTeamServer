@@ -17,13 +17,10 @@ type BurpRequestResponse struct {
 }
 
 type BurpTCMessage struct {
-	BurpRequestResponse  BurpRequestResponse `json:"burpmsg"`
-	AuthenticationString string              `json:"auth"`
-	SendingUser          string              `json:"sender"`
-	RoomName             string              `json:"room"`
-	MessageTarget        string              `json:"receiver"`
-	MessageType          string              `json:"msgtype"`
-	Data                 string              `json:"data"`
+	BurpRequestResponse BurpRequestResponse `json:"burpmsg"`
+	MessageTarget       string              `json:"messageTarget"`
+	MessageType         string              `json:"msgtype"`
+	Data                string              `json:"data"`
 }
 
 func NewBurpTCMessage() *BurpTCMessage {
@@ -31,6 +28,6 @@ func NewBurpTCMessage() *BurpTCMessage {
 }
 
 func (b BurpTCMessage) String() string {
-	return fmt.Sprintf("%s - %s %s - %s - %s - %b - %s",
-		b.BurpRequestResponse, b.AuthenticationString, b.SendingUser, b.RoomName, b.MessageTarget, b.MessageType, b.Data)
+	return fmt.Sprintf("%s - %s - %b - %s",
+		b.BurpRequestResponse, b.MessageTarget, b.MessageType, b.Data)
 }
