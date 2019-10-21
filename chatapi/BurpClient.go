@@ -26,11 +26,6 @@ const (
 	maxMessageSize = 8192 * 8192
 )
 
-var (
-	newline = []byte{'\n'}
-	space   = []byte{' '}
-)
-
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  8192 * 8192,
 	WriteBufferSize: 8192 * 8192,
@@ -42,6 +37,8 @@ type Client struct {
 
 	mutedClients []string
 
+	roomName string
+
 	name string
 
 	// The websocket connection.
@@ -51,47 +48,47 @@ type Client struct {
 	send chan []byte
 }
 
-func (c *Client) parseMessage(message *BurpTCMessage, sub *subscription) {
+func (c *Client) parseMessage(message *BurpTCMessage) {
 	switch message.MessageType {
 	case "SYNC_SCOPE_MESSAGE":
 		if message.MessageTarget != "Self" {
 			log.Printf("received new scope from %s", c.name)
-			c.hub.rooms[sub.roomName].scope = message.Data
+			c.hub.rooms[c.roomName].scope = message.Data
 		} else {
 			log.Printf("%s requesting scope", c.name)
-			message.Data = c.hub.rooms[sub.roomName].scope
+			message.Data = c.hub.rooms[c.roomName].scope
 		}
-		c.hub.broadcast <- c.hub.generateMessage(message, c, sub.roomName, message.MessageTarget)
+		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
 	case "JOIN_ROOM_MESSAGE":
 		log.Printf("%s joining room: %s", c.name, message.MessageTarget)
-		c.hub.rooms[sub.roomName].deleteClient(c.name)
-		c.hub.rooms[message.MessageTarget].addClient(sub.conn)
-		sub.roomName = message.MessageTarget
-		if len(c.hub.rooms[sub.roomName].clients) == 0 {
-			c.hub.deleteRoom(sub.roomName)
+		c.hub.rooms[c.roomName].deleteClient(c.name)
+		c.hub.rooms[message.MessageTarget].addClient(c)
+		c.roomName = message.MessageTarget
+		if len(c.hub.rooms[c.roomName].clients) == 0 {
+			c.hub.deleteRoom(c.roomName)
 		} else {
-			c.updateRoomMembers(sub.roomName)
+			c.updateRoomMembers()
 		}
 	case "LEAVE_ROOM_MESSAGE":
-		log.Printf("leaving room: %s", sub.roomName)
-		c.hub.rooms[sub.roomName].deleteClient(c.name)
-		c.hub.rooms["server"].addClient(sub.conn)
-		if len(c.hub.rooms[sub.roomName].clients) == 0 {
-			c.hub.deleteRoom(sub.roomName)
+		log.Printf("leaving room: %s", c.roomName)
+		c.hub.rooms[c.roomName].deleteClient(c.name)
+		c.hub.rooms["server"].addClient(c)
+		if len(c.hub.rooms[c.roomName].clients) == 0 {
+			c.hub.deleteRoom(c.roomName)
 		} else {
-			c.updateRoomMembers(sub.roomName)
+			c.updateRoomMembers()
 		}
-		sub.roomName = "server"
+		c.roomName = "server"
 	case "ADD_ROOM_MESSAGE":
 		log.Printf("creating new room: " + message.MessageTarget)
-		c.hub.rooms[sub.roomName].deleteClient(c.name)
+		c.hub.rooms[c.roomName].deleteClient(c.name)
 		c.hub.addRoom(message.MessageTarget, NewRoom())
-		c.hub.rooms[message.MessageTarget].addClient(sub.conn)
-		sub.roomName = message.MessageTarget
-		c.updateRoomMembers(message.MessageTarget)
+		c.hub.rooms[message.MessageTarget].addClient(c)
+		c.roomName = message.MessageTarget
+		c.updateRoomMembers()
 	case "MUTE_MESSAGE":
 		if message.MessageTarget == "All" {
-			keys := reflect.ValueOf(c.hub.rooms[sub.roomName].clients).MapKeys()
+			keys := reflect.ValueOf(c.hub.rooms[c.roomName].clients).MapKeys()
 			log.Printf("Clients to mute %s", keys)
 			for i := 0; i < len(keys); i++ {
 				key := keys[i].String()
@@ -106,7 +103,7 @@ func (c *Client) parseMessage(message *BurpTCMessage, sub *subscription) {
 		log.Printf("%s muted these clients %s", c.name, c.mutedClients)
 	case "UNMUTE_MESSAGE":
 		if message.MessageTarget == "All" {
-			keys := reflect.ValueOf(c.hub.rooms[sub.roomName].clients).MapKeys()
+			keys := reflect.ValueOf(c.hub.rooms[c.roomName].clients).MapKeys()
 			for i := 0; i < len(keys); i++ {
 				key := keys[i].String()
 				if key != c.name {
@@ -124,7 +121,7 @@ func (c *Client) parseMessage(message *BurpTCMessage, sub *subscription) {
 			keys = append(keys, k)
 		}
 		message.Data = strings.Join(keys, ",")
-		c.hub.broadcast <- c.hub.generateMessage(message, c, sub.roomName, message.MessageTarget)
+		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
 	case "COOKIE_MESSAGE":
 		fallthrough
 	case "SCAN_ISSUE_MESSAGE":
@@ -134,7 +131,7 @@ func (c *Client) parseMessage(message *BurpTCMessage, sub *subscription) {
 	case "INTRUDER_MESSAGE":
 		fallthrough
 	case "BURP_MESSAGE":
-		c.hub.broadcast <- c.hub.generateMessage(message, c, sub.roomName, message.MessageTarget)
+		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
 	default:
 		log.Println("ERROR: unknown message type")
 	}
@@ -169,10 +166,9 @@ func (c *Client) isGivenClientMuted(clientName string) bool {
 // The application runs readPump in a per-connection goroutine. The application
 // ensures that there is at most one reader on a connection by executing all
 // reads from this goroutine.
-func (s *subscription) readPump() {
-	c := s.conn
+func (c *Client) readPump() {
 	defer func() {
-		c.hub.unregister <- s
+		c.hub.unregister <- c
 		c.conn.Close()
 	}()
 	c.conn.SetReadLimit(maxMessageSize)
@@ -194,7 +190,7 @@ func (s *subscription) readPump() {
 		if err := json.Unmarshal(bytes.Trim(decodedBytes, "\x00"), &newBurpMessage); err != nil {
 			log.Printf("Could not unmarshal BurpTCMessage, error: %s \n", err)
 		} else {
-			c.parseMessage(newBurpMessage, s)
+			c.parseMessage(newBurpMessage)
 		}
 	}
 }
@@ -204,19 +200,19 @@ func (c *Client) write(mt int, payload []byte) error {
 	return c.conn.WriteMessage(mt, payload)
 }
 
-func (c *Client) updateRoomMembers(roomName string) {
-	c.hub.rooms[roomName].Lock()
-	defer c.hub.rooms[roomName].Unlock()
+func (c *Client) updateRoomMembers() {
+	c.hub.rooms[c.roomName].Lock()
+	defer c.hub.rooms[c.roomName].Unlock()
 	msg := NewBurpTCMessage()
 	msg.MessageType = "NEW_MEMBER_MESSAGE"
 
-	keys := make([]string, 0, len(c.hub.rooms[roomName].clients))
-	for k := range c.hub.rooms[roomName].clients {
+	keys := make([]string, 0, len(c.hub.rooms[c.roomName].clients))
+	for k := range c.hub.rooms[c.roomName].clients {
 		keys = append(keys, k)
 	}
 	log.Printf("Current room members: %s", strings.Join(keys, ","))
 	msg.Data = strings.Join(keys, ",")
-	c.hub.broadcast <- c.hub.generateMessage(msg, nil, roomName, "Room")
+	c.hub.broadcast <- c.hub.generateMessage(msg, nil, c.roomName, "Room")
 }
 
 // writePump pumps messages from the hub to the websocket connection.
@@ -224,8 +220,7 @@ func (c *Client) updateRoomMembers(roomName string) {
 // A goroutine running writePump is started for each connection. The
 // application ensures that there is at most one writer to a connection by
 // executing all writes from this goroutine.
-func (s *subscription) writePump() {
-	c := s.conn
+func (c *Client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -265,14 +260,14 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 				log.Println(err)
 				return
 			}
-			client := &Client{hub: hub, conn: conn, send: make(chan []byte, 8196*8196), name: r.Header.Get("Username")}
-			s := subscription{client, "server"}
-			hub.register <- &s
+			client := &Client{hub: hub, conn: conn, send: make(chan []byte, 8196*8196), name: r.Header.Get("Username"), roomName: "server"}
+			//s := subscription{client, "server"}
+			hub.register <- client
 
 			// Allow collection of memory referenced by the caller by doing all work in
 			// new goroutines.
-			go s.writePump()
-			go s.readPump()
+			go client.writePump()
+			go client.readPump()
 		}
 
 	} else {

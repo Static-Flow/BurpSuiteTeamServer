@@ -14,11 +14,6 @@ type message struct {
 	target   string
 }
 
-type subscription struct {
-	conn     *Client
-	roomName string
-}
-
 // Hub maintains the set of active clients and broadcasts messages to the
 // clients.
 type Hub struct {
@@ -31,18 +26,18 @@ type Hub struct {
 	broadcast chan message
 
 	// Register requests from the clients.
-	register chan *subscription
+	register chan *Client
 
 	// Unregister requests from clients.
-	unregister chan *subscription
+	unregister chan *Client
 }
 
 func NewHub(password string) *Hub {
 	hub := &Hub{
 		serverPassword: password,
 		broadcast:      make(chan message),
-		register:       make(chan *subscription),
-		unregister:     make(chan *subscription),
+		register:       make(chan *Client),
+		unregister:     make(chan *Client),
 		rooms:          make(map[string]*Room),
 	}
 	hub.rooms["server"] = NewRoom()
@@ -88,18 +83,18 @@ func (h *Hub) updateRooms() {
 func (h *Hub) Run() {
 	for {
 		select {
-		case subscription := <-h.register:
+		case client := <-h.register:
 			log.Println("New Client")
-			h.rooms[subscription.roomName].addClient(subscription.conn)
-		case subscription := <-h.unregister:
-			room := h.rooms[subscription.roomName]
+			h.rooms[client.roomName].addClient(client)
+		case client := <-h.unregister:
+			room := h.rooms[client.roomName]
 			if room != nil {
-				if _, ok := room.getClient(subscription.conn.name); ok {
-					room.deleteClient(subscription.conn.name)
-					if subscription.roomName != "server" && len(room.clients) == 0 {
-						h.deleteRoom(subscription.roomName)
+				if _, ok := room.getClient(client.name); ok {
+					room.deleteClient(client.name)
+					if client.roomName != "server" && len(room.clients) == 0 {
+						h.deleteRoom(client.roomName)
 					}
-					close(subscription.conn.send)
+					close(client.send)
 					log.Println("Client Leaving")
 				}
 			}

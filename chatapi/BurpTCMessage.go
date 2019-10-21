@@ -2,7 +2,14 @@ package chatapi
 
 import (
 	"fmt"
+	"time"
 )
+
+type Comment struct {
+	comment          string
+	userWhoCommented string
+	timeOfComment    time.Time
+}
 
 type BurpMetaData struct {
 	Host     string `json:"host"`
@@ -14,6 +21,7 @@ type BurpRequestResponse struct {
 	Request     []int        `json:"request"`
 	Response    []int        `json:"response"`
 	HttpService BurpMetaData `json:"httpService"`
+	Comment     []Comment    `json:"comments"`
 }
 
 type BurpTCMessage struct {
