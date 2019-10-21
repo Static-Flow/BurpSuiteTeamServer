@@ -52,10 +52,13 @@ func main() {
 			Addr:      ":" + *port,
 			TLSConfig: tlsConfig,
 		}
+		log.Printf("Server running at wss://%s:%s", *host, *port)
 		if httpErr = server.ListenAndServeTLS("burpServer.pem", "burpServer.key"); httpErr != nil {
 			log.Fatal("The process exited with https error: ", httpErr.Error())
 		}
+
 	} else {
+		log.Printf("Server running at ws://%s:%s", *host, *port)
 		httpErr := http.ListenAndServe(":"+*port, nil)
 		if httpErr != nil {
 			log.Fatal("ListenAndServe: ", err)
