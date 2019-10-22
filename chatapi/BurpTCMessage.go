@@ -2,13 +2,36 @@ package chatapi
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
+type JavaJsonTime struct {
+	t time.Time
+}
+
+func (j *JavaJsonTime) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), "\"")
+	t, err := time.Parse("Jan _2 15:04:05", s)
+	if err != nil {
+		return err
+	}
+	*j = JavaJsonTime{t}
+	return nil
+}
+
+func (j JavaJsonTime) String() string {
+	return j.t.Format("Jan _2 15:04:05")
+}
+
+func (j JavaJsonTime) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + j.t.Format("Jan _2 15:04:05") + `"`), nil
+}
+
 type Comment struct {
-	comment          string    `json:"comment"`
-	userWhoCommented string    `json:"userWhoCommented"`
-	timeOfComment    time.Time `json:"timeOfComment"`
+	Comment          string       `json:"comment"`
+	UserWhoCommented string       `json:"userWhoCommented"`
+	TimeOfComment    JavaJsonTime `json:"timeOfComment"`
 }
 
 type BurpMetaData struct {

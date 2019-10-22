@@ -276,7 +276,7 @@ func (c *Client) writePump() {
 // serveWs handles websocket requests from the peer.
 func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	if authHeader := r.Header.Get("Auth"); authHeader == hub.serverPassword {
-		if _, ok := hub.rooms["server"].getClient(r.Header.Get("Username")); ok {
+		if hub.clientExistsInServer(r.Header.Get("Username")) {
 			log.Println("Found duplicate name")
 			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte("409 - Duplicate name in server!"))

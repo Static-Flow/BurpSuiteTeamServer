@@ -19,6 +19,8 @@ type message struct {
 type Hub struct {
 	serverPassword string
 
+	allClientNames []string
+
 	// Registered clients.
 	rooms map[string]*Room
 
@@ -39,6 +41,7 @@ func NewHub(password string) *Hub {
 		register:       make(chan *Client),
 		unregister:     make(chan *Client),
 		rooms:          make(map[string]*Room),
+		allClientNames: []string{},
 	}
 	hub.rooms["server"] = NewRoom()
 	return hub
@@ -47,6 +50,20 @@ func NewHub(password string) *Hub {
 func (h *Hub) addRoom(roomName string, room *Room) {
 	h.rooms[roomName] = room
 	h.updateRooms()
+}
+
+func (h *Hub) addClientToServerList(clientName string) {
+	h.allClientNames = append(h.allClientNames, clientName)
+}
+
+func (h *Hub) removeClientFromServerList(clientName string) {
+	if h.clientExistsInServer(clientName) {
+		h.allClientNames = remove(h.allClientNames, index(h.allClientNames, clientName))
+	}
+}
+
+func (h *Hub) clientExistsInServer(clientName string) bool {
+	return index(h.allClientNames, clientName) != -1
 }
 
 func (h *Hub) deleteRoom(roomName string) {
@@ -85,6 +102,7 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.register:
 			log.Println("New Client")
+			h.addClientToServerList(client.name)
 			h.rooms[client.roomName].addClient(client)
 		case client := <-h.unregister:
 			room := h.rooms[client.roomName]
@@ -95,6 +113,7 @@ func (h *Hub) Run() {
 						h.deleteRoom(client.roomName)
 					}
 					close(client.send)
+					h.removeClientFromServerList(client.name)
 					log.Println("Client Leaving")
 				}
 			}
