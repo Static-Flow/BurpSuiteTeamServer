@@ -7,7 +7,7 @@ import (
 )
 
 type JavaJsonTime struct {
-	t time.Time
+	T time.Time
 }
 
 func (j *JavaJsonTime) UnmarshalJSON(b []byte) error {
@@ -21,11 +21,11 @@ func (j *JavaJsonTime) UnmarshalJSON(b []byte) error {
 }
 
 func (j JavaJsonTime) String() string {
-	return j.t.Format("Jan _2 15:04:05")
+	return j.T.Format("Jan _2 15:04:05")
 }
 
 func (j JavaJsonTime) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + j.t.Format("Jan _2 15:04:05") + `"`), nil
+	return []byte(`"` + j.T.Format("Jan _2 15:04:05") + `"`), nil
 }
 
 type Comment struct {
@@ -59,7 +59,7 @@ func NewBurpTCMessage() *BurpTCMessage {
 }
 
 func (b BurpTCMessage) String() string {
-	return fmt.Sprintf("%s - %s - %b - %s",
+	return fmt.Sprintf("%+v - %s - %s - %s",
 		b.BurpRequestResponse, b.MessageTarget, b.MessageType, b.Data)
 }
 
@@ -73,4 +73,16 @@ func (b BurpRequestResponse) removeComments() {
 
 func (b BurpRequestResponse) setComments(comments []Comment) {
 	b.Comments = append([]Comment(nil), comments...)
+}
+
+func (b BurpRequestResponse) String() string {
+	return fmt.Sprintf("%+q - %+q - %+v - %+v", b.Request, b.Response, b.HttpService, b.Comments)
+}
+
+func (b BurpMetaData) String() string {
+	return fmt.Sprintf("%s - %d - %s", b.Host, b.Port, b.Protocol)
+}
+
+func (c *Comment) String() string {
+	return fmt.Sprintf("%s - %s - %+v", c.Comment, c.UserWhoCommented, c.TimeOfComment)
 }
