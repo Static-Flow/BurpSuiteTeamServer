@@ -100,7 +100,7 @@ func (h *Hub) Run() {
 			}
 		case message := <-h.broadcast:
 			jsonMsg, _ := json.Marshal(message.msg)
-			log.Println(string(jsonMsg))
+			log.Println("Sending: " + string(jsonMsg))
 			encodedBuf := make([]byte, base64.StdEncoding.EncodedLen(len(jsonMsg)))
 			base64.StdEncoding.Encode(encodedBuf, jsonMsg)
 			room := h.rooms[message.roomName]

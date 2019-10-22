@@ -142,5 +142,5 @@ func GenCrt(host string) {
 		},
 	)
 	keyOut.Close()
-	log.Print("written burpServer.pem\n")
+	log.Print("written burpServer.key\n")
 }

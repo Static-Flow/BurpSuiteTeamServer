@@ -6,9 +6,9 @@ import (
 )
 
 type Comment struct {
-	comment          string
-	userWhoCommented string
-	timeOfComment    time.Time
+	comment          string    `json:"comment"`
+	userWhoCommented string    `json:"userWhoCommented"`
+	timeOfComment    time.Time `json:"timeOfComment"`
 }
 
 type BurpMetaData struct {
@@ -18,17 +18,17 @@ type BurpMetaData struct {
 }
 
 type BurpRequestResponse struct {
-	Request     []int        `json:"request"`
-	Response    []int        `json:"response"`
-	HttpService BurpMetaData `json:"httpService"`
-	Comment     []Comment    `json:"comments"`
+	Request     []int         `json:"request"`
+	Response    []int         `json:"response"`
+	HttpService *BurpMetaData `json:"httpService"`
+	Comments    []Comment     `json:"comments"`
 }
 
 type BurpTCMessage struct {
-	BurpRequestResponse BurpRequestResponse `json:"burpmsg"`
-	MessageTarget       string              `json:"messageTarget"`
-	MessageType         string              `json:"msgtype"`
-	Data                string              `json:"data"`
+	BurpRequestResponse *BurpRequestResponse `json:"burpmsg"`
+	MessageTarget       string               `json:"messageTarget"`
+	MessageType         string               `json:"msgtype"`
+	Data                string               `json:"data"`
 }
 
 func NewBurpTCMessage() *BurpTCMessage {
@@ -38,4 +38,16 @@ func NewBurpTCMessage() *BurpTCMessage {
 func (b BurpTCMessage) String() string {
 	return fmt.Sprintf("%s - %s - %b - %s",
 		b.BurpRequestResponse, b.MessageTarget, b.MessageType, b.Data)
+}
+
+func (b BurpRequestResponse) addComment(comment Comment) {
+	b.Comments = append(b.Comments, comment)
+}
+
+func (b BurpRequestResponse) removeComments() {
+	b.Comments = nil
+}
+
+func (b BurpRequestResponse) setComments(comments []Comment) {
+	b.Comments = append([]Comment(nil), comments...)
 }

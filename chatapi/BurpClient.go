@@ -64,11 +64,8 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		c.hub.rooms[c.roomName].deleteClient(c.name)
 		c.hub.rooms[message.MessageTarget].addClient(c)
 		c.roomName = message.MessageTarget
-		if len(c.hub.rooms[c.roomName].clients) == 0 {
-			c.hub.deleteRoom(c.roomName)
-		} else {
-			c.updateRoomMembers()
-		}
+		c.updateRoomMembers()
+		c.sendRoomMessages()
 	case "LEAVE_ROOM_MESSAGE":
 		log.Printf("leaving room: %s", c.roomName)
 		c.hub.rooms[c.roomName].deleteClient(c.name)
@@ -86,6 +83,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		c.hub.rooms[message.MessageTarget].addClient(c)
 		c.roomName = message.MessageTarget
 		c.updateRoomMembers()
+		c.sendRoomMessages()
 	case "MUTE_MESSAGE":
 		if message.MessageTarget == "All" {
 			keys := reflect.ValueOf(c.hub.rooms[c.roomName].clients).MapKeys()
@@ -121,6 +119,10 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 			keys = append(keys, k)
 		}
 		message.Data = strings.Join(keys, ",")
+		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
+	case "COMMENT_MESSAGE":
+		log.Printf("Got comment message: " + message.String())
+		c.hub.rooms[c.roomName].comments.setRequestWithComments(message.Data, *message.BurpRequestResponse)
 		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
 	case "COOKIE_MESSAGE":
 		fallthrough
@@ -182,11 +184,10 @@ func (c *Client) readPump() {
 			}
 			break
 		}
-		log.Println(msg)
 		newBurpMessage := NewBurpTCMessage()
 		decodedBytes := make([]byte, base64.StdEncoding.DecodedLen(len(msg)))
 		base64.StdEncoding.Decode(decodedBytes, msg)
-		log.Println(string(decodedBytes))
+		log.Printf(string(decodedBytes))
 		if err := json.Unmarshal(bytes.Trim(decodedBytes, "\x00"), &newBurpMessage); err != nil {
 			log.Printf("Could not unmarshal BurpTCMessage, error: %s \n", err)
 		} else {
@@ -198,6 +199,31 @@ func (c *Client) readPump() {
 func (c *Client) write(mt int, payload []byte) error {
 	c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 	return c.conn.WriteMessage(mt, payload)
+}
+
+func (c *Client) sendRoomMessages() {
+	if len(c.hub.rooms[c.roomName].comments.requestsWithComments) != 0 {
+		c.hub.rooms[c.roomName].Lock()
+		defer c.hub.rooms[c.roomName].Unlock()
+		msg := NewBurpTCMessage()
+		msg.MessageType = "GET_COMMENTS_MESSAGE"
+
+		burpMessagesWithComments := make([]BurpRequestResponse, len(c.hub.rooms[c.roomName].comments.requestsWithComments))
+		idx := 0
+		for _, value := range c.hub.rooms[c.roomName].comments.requestsWithComments {
+			burpMessagesWithComments[idx] = value
+			idx++
+		}
+
+		log.Printf("Sending current room messages to %s", c.name)
+		jsonEncodedComments, err := json.Marshal(burpMessagesWithComments)
+		if err != nil {
+			msg.Data = string(jsonEncodedComments)
+			c.hub.broadcast <- c.hub.generateMessage(msg, nil, c.roomName, "Self")
+		} else {
+			log.Printf("error json encoding comments: %s", err)
+		}
+	}
 }
 
 func (c *Client) updateRoomMembers() {

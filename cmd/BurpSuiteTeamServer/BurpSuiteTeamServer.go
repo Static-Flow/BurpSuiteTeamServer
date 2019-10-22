@@ -16,7 +16,7 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	var host = flag.String("host", "localhost", "host for TLS cert. Defaults to localhost")
 	var port = flag.String("port", "9999", "http service address")
-	var serverPassword = flag.String("serverPassword", "superleetsecret", "password for the server")
+	var serverPassword = flag.String("serverPassword", "", "password for the server")
 	flag.Parse()
 	chatapi.GenCrt(*host)
 	hub := chatapi.NewHub(*serverPassword)
@@ -31,21 +31,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		caKey, err := ioutil.ReadFile("./burpServer.key")
-		if err != nil {
-			log.Fatal(err)
-		}
-		servTLSCert, err := tls.X509KeyPair(caCert, caKey)
-		if err != nil {
-			log.Fatalf("invalid key pair: %v", err)
-		}
 		caCertPool := x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM(caCert)
 		// Create the TLS Config with the CA pool and enable Client certificate validation
 		tlsConfig := &tls.Config{
-			Certificates: []tls.Certificate{servTLSCert},
-			ClientCAs:    caCertPool,
-			ClientAuth:   tls.RequireAndVerifyClientCert,
+			ClientCAs:  caCertPool,
+			ClientAuth: tls.RequireAndVerifyClientCert,
 		}
 		tlsConfig.BuildNameToCertificate()
 		server := &http.Server{
