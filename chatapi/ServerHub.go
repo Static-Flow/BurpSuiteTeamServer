@@ -30,9 +30,6 @@ type Hub struct {
 
 	// Register requests from the clients.
 	register chan *Client
-
-	// Unregister requests from clients.
-	unregister chan *Client
 }
 
 func NewHub(password string) *Hub {
@@ -41,7 +38,6 @@ func NewHub(password string) *Hub {
 		serverPassword: password,
 		broadcast:      make(chan message),
 		register:       make(chan *Client),
-		unregister:     make(chan *Client),
 		rooms:          make(map[string]*Room),
 	}
 	hub.rooms["server"] = NewRoom("")
@@ -95,9 +91,11 @@ func (h *Hub) updateRoomMembers(roomName string) {
 	for k := range h.rooms[roomName].clients {
 		keys = append(keys, k)
 	}
-	log.Printf("Current room members: %s", strings.Join(keys, ","))
-	msg.Data = strings.Join(keys, ",")
-	h.broadcast <- h.generateMessage(msg, nil, roomName, "Room")
+	if len(keys) > 0 {
+		log.Printf("Current room members: %s", strings.Join(keys, ","))
+		msg.Data = strings.Join(keys, ",")
+		h.broadcast <- h.generateMessage(msg, nil, roomName, "Room")
+	}
 }
 
 func (h *Hub) updateRooms() {
@@ -122,19 +120,6 @@ func (h *Hub) Run() {
 			log.Println("New Client")
 			h.addClientToServerList(client.name)
 			h.rooms[client.roomName].addClient(client)
-		case client := <-h.unregister:
-			room := h.rooms[client.roomName]
-			if room != nil {
-				if _, ok := room.getClient(client.name); ok {
-					room.deleteClient(client.name)
-					if client.roomName != "server" && len(room.clients) == 0 {
-						h.deleteRoom(client.roomName)
-					}
-					close(client.send)
-					h.removeClientFromServerList(client.name)
-					log.Println("Client Leaving")
-				}
-			}
 		case message := <-h.broadcast:
 			jsonMsg, _ := json.Marshal(message.msg)
 			log.Println("Sending: " + string(jsonMsg))

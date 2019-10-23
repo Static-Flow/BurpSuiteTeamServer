@@ -206,12 +206,18 @@ func (c *Client) isGivenClientMuted(clientName string) bool {
 // reads from this goroutine.
 func (c *Client) readPump() {
 	defer func() {
+		c.hub.rooms[c.roomName].deleteClient(c.name)
 		if c.roomName != "server" {
-			c.hub.rooms[c.roomName].deleteClient(c.name)
-			c.hub.updateRoomMembers(c.roomName)
+			if len(c.hub.rooms[c.roomName].clients) == 0 {
+				c.hub.deleteRoom(c.roomName)
+			} else {
+				c.hub.updateRoomMembers(c.roomName)
+			}
 			c.roomName = "server"
 		}
-		c.hub.unregister <- c
+		close(c.send)
+		c.hub.removeClientFromServerList(c.name)
+		log.Println("Client Leaving")
 		c.conn.Close()
 	}()
 	c.conn.SetReadLimit(maxMessageSize)
