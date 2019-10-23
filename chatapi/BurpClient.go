@@ -69,7 +69,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 				c.hub.rooms[c.roomName].deleteClient(c.name)
 				c.hub.rooms[message.MessageTarget].addClient(c)
 				c.roomName = message.MessageTarget
-				c.updateRoomMembers()
+				c.hub.updateRoomMembers(c.roomName)
 				c.sendRoomMessages()
 			} else {
 				//bad password
@@ -82,7 +82,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 			c.hub.rooms[c.roomName].deleteClient(c.name)
 			c.hub.rooms[message.MessageTarget].addClient(c)
 			c.roomName = message.MessageTarget
-			c.updateRoomMembers()
+			c.hub.updateRoomMembers(c.roomName)
 			c.sendRoomMessages()
 
 		}
@@ -93,7 +93,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		if len(c.hub.rooms[c.roomName].clients) == 0 {
 			c.hub.deleteRoom(c.roomName)
 		} else {
-			c.updateRoomMembers()
+			c.hub.updateRoomMembers(c.roomName)
 		}
 		c.hub.updateRooms()
 		c.authenticated = false
@@ -104,7 +104,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		c.hub.addRoom(message.MessageTarget, NewRoom(message.Data))
 		c.hub.rooms[message.MessageTarget].addClient(c)
 		c.roomName = message.MessageTarget
-		c.updateRoomMembers()
+		c.hub.updateRoomMembers(c.roomName)
 		c.sendRoomMessages()
 	case "MUTE_MESSAGE":
 		if message.MessageTarget == "All" {
@@ -206,6 +206,11 @@ func (c *Client) isGivenClientMuted(clientName string) bool {
 // reads from this goroutine.
 func (c *Client) readPump() {
 	defer func() {
+		if c.roomName != "server" {
+			c.hub.rooms[c.roomName].deleteClient(c.name)
+			c.hub.updateRoomMembers(c.roomName)
+			c.roomName = "server"
+		}
 		c.hub.unregister <- c
 		c.conn.Close()
 	}()
@@ -261,21 +266,6 @@ func (c *Client) sendRoomMessages() {
 			c.hub.broadcast <- c.hub.generateMessage(msg, c, c.roomName, "Self")
 		}
 	}
-}
-
-func (c *Client) updateRoomMembers() {
-	c.hub.rooms[c.roomName].Lock()
-	defer c.hub.rooms[c.roomName].Unlock()
-	msg := NewBurpTCMessage()
-	msg.MessageType = "NEW_MEMBER_MESSAGE"
-
-	keys := make([]string, 0, len(c.hub.rooms[c.roomName].clients))
-	for k := range c.hub.rooms[c.roomName].clients {
-		keys = append(keys, k)
-	}
-	log.Printf("Current room members: %s", strings.Join(keys, ","))
-	msg.Data = strings.Join(keys, ",")
-	c.hub.broadcast <- c.hub.generateMessage(msg, nil, c.roomName, "Room")
 }
 
 // writePump pumps messages from the hub to the websocket connection.

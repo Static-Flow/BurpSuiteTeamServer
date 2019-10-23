@@ -85,6 +85,21 @@ func (h *Hub) generateMessage(burpTCMessage *BurpTCMessage, sender *Client, room
 	}
 }
 
+func (h *Hub) updateRoomMembers(roomName string) {
+	h.rooms[roomName].Lock()
+	defer h.rooms[roomName].Unlock()
+	msg := NewBurpTCMessage()
+	msg.MessageType = "NEW_MEMBER_MESSAGE"
+
+	keys := make([]string, 0, len(h.rooms[roomName].clients))
+	for k := range h.rooms[roomName].clients {
+		keys = append(keys, k)
+	}
+	log.Printf("Current room members: %s", strings.Join(keys, ","))
+	msg.Data = strings.Join(keys, ",")
+	h.broadcast <- h.generateMessage(msg, nil, roomName, "Room")
+}
+
 func (h *Hub) updateRooms() {
 	msg := NewBurpTCMessage()
 	msg.MessageType = "GET_ROOMS_MESSAGE"
