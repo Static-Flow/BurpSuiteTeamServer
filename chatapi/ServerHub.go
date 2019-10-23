@@ -132,7 +132,7 @@ func (h *Hub) Run() {
 				if message.sender != nil {
 					for client := range room.clients {
 						if client != message.sender.name {
-							log.Printf("is client %s muted %t", client, room.clients[client].isGivenClientMuted(message.sender.name))
+							log.Printf("has client %s muted us? %t", client, room.clients[client].isGivenClientMuted(message.sender.name))
 							if !room.clients[client].isGivenClientMuted(message.sender.name) {
 								select {
 								case room.clients[client].send <- encodedBuf:
