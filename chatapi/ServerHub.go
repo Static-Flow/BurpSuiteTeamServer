@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -18,6 +19,8 @@ type message struct {
 // clients.
 type Hub struct {
 	serverPassword string
+
+	allClientNames []string
 
 	// Registered clients.
 	rooms map[string]*Room
@@ -34,14 +37,29 @@ type Hub struct {
 
 func NewHub(password string) *Hub {
 	hub := &Hub{
+		allClientNames: []string{},
 		serverPassword: password,
 		broadcast:      make(chan message),
 		register:       make(chan *Client),
 		unregister:     make(chan *Client),
 		rooms:          make(map[string]*Room),
 	}
-	hub.rooms["server"] = NewRoom()
+	hub.rooms["server"] = NewRoom("")
 	return hub
+}
+
+func (h *Hub) addClientToServerList(clientName string) {
+	h.allClientNames = append(h.allClientNames, clientName)
+}
+
+func (h *Hub) removeClientFromServerList(clientName string) {
+	if h.clientExistsInServer(clientName) {
+		h.allClientNames = remove(h.allClientNames, index(h.allClientNames, clientName))
+	}
+}
+
+func (h *Hub) clientExistsInServer(clientName string) bool {
+	return index(h.allClientNames, clientName) != -1
 }
 
 func (h *Hub) addRoom(roomName string, room *Room) {
@@ -73,7 +91,9 @@ func (h *Hub) updateRooms() {
 
 	keys := make([]string, 0, len(h.rooms))
 	for k := range h.rooms {
-		keys = append(keys, k)
+		if k != "server" {
+			keys = append(keys, k+"::"+strconv.FormatBool(len(h.rooms[k].password) > 0))
+		}
 	}
 	log.Printf("Current rooms: %s", strings.Join(keys, ","))
 	msg.Data = strings.Join(keys, ",")
@@ -85,6 +105,7 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.register:
 			log.Println("New Client")
+			h.addClientToServerList(client.name)
 			h.rooms[client.roomName].addClient(client)
 		case client := <-h.unregister:
 			room := h.rooms[client.roomName]
@@ -95,6 +116,7 @@ func (h *Hub) Run() {
 						h.deleteRoom(client.roomName)
 					}
 					close(client.send)
+					h.removeClientFromServerList(client.name)
 					log.Println("Client Leaving")
 				}
 			}

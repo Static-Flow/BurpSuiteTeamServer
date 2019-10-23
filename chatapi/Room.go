@@ -7,14 +7,16 @@ type Room struct {
 	clients map[string]*Client
 	*sync.RWMutex
 	comments Comments
+	password string
 }
 
-func NewRoom() *Room {
+func NewRoom(password string) *Room {
 	return &Room{
 		"",
 		make(map[string]*Client),
 		new(sync.RWMutex),
 		NewComments(),
+		password,
 	}
 }
 

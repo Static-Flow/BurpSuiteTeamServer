@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -35,6 +36,8 @@ var upgrader = websocket.Upgrader{
 type Client struct {
 	hub *Hub
 
+	authenticated bool
+
 	mutedClients []string
 
 	roomName string
@@ -60,12 +63,29 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		}
 		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
 	case "JOIN_ROOM_MESSAGE":
-		log.Printf("%s joining room: %s", c.name, message.MessageTarget)
-		c.hub.rooms[c.roomName].deleteClient(c.name)
-		c.hub.rooms[message.MessageTarget].addClient(c)
-		c.roomName = message.MessageTarget
-		c.updateRoomMembers()
-		c.sendRoomMessages()
+		if len(c.hub.rooms[message.MessageTarget].password) > 0 {
+			if c.authenticated {
+				log.Printf("%s joining room: %s", c.name, message.MessageTarget)
+				c.hub.rooms[c.roomName].deleteClient(c.name)
+				c.hub.rooms[message.MessageTarget].addClient(c)
+				c.roomName = message.MessageTarget
+				c.updateRoomMembers()
+				c.sendRoomMessages()
+			} else {
+				//bad password
+				message.MessageType = "BAD_PASSWORD_MESSAGE"
+				c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, "Self")
+			}
+
+		} else {
+			log.Printf("%s joining room: %s", c.name, message.MessageTarget)
+			c.hub.rooms[c.roomName].deleteClient(c.name)
+			c.hub.rooms[message.MessageTarget].addClient(c)
+			c.roomName = message.MessageTarget
+			c.updateRoomMembers()
+			c.sendRoomMessages()
+
+		}
 	case "LEAVE_ROOM_MESSAGE":
 		log.Printf("leaving room: %s", c.roomName)
 		c.hub.rooms[c.roomName].deleteClient(c.name)
@@ -75,11 +95,12 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		} else {
 			c.updateRoomMembers()
 		}
+		c.authenticated = false
 		c.roomName = "server"
 	case "ADD_ROOM_MESSAGE":
 		log.Printf("creating new room: " + message.MessageTarget)
 		c.hub.rooms[c.roomName].deleteClient(c.name)
-		c.hub.addRoom(message.MessageTarget, NewRoom())
+		c.hub.addRoom(message.MessageTarget, NewRoom(message.Data))
 		c.hub.rooms[message.MessageTarget].addClient(c)
 		c.roomName = message.MessageTarget
 		c.updateRoomMembers()
@@ -116,7 +137,9 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		rooms := c.hub.rooms
 		keys := make([]string, 0, len(rooms))
 		for k := range rooms {
-			keys = append(keys, k)
+			if k != "server" {
+				keys = append(keys, k+"::"+strconv.FormatBool(len(rooms[k].password) > 0))
+			}
 		}
 		message.Data = strings.Join(keys, ",")
 		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
@@ -124,6 +147,17 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		log.Printf("Got comment message: " + message.String())
 		c.hub.rooms[c.roomName].comments.setRequestWithComments(message.Data, *message.BurpRequestResponse)
 		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
+	case "CHECK_PASSWORD_MESSAGE":
+		if c.hub.rooms[message.MessageTarget].password == message.Data {
+			log.Printf("%s supplied orrect password for room: %s", c.name, message.MessageTarget)
+			c.authenticated = true
+			message.MessageType = "GOOD_PASSWORD_MESSAGE"
+			c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, "Self")
+		} else {
+			//bad password
+			message.MessageType = "BAD_PASSWORD_MESSAGE"
+			c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, "Self")
+		}
 	case "COOKIE_MESSAGE":
 		fallthrough
 	case "SCAN_ISSUE_MESSAGE":
@@ -276,7 +310,7 @@ func (c *Client) writePump() {
 // serveWs handles websocket requests from the peer.
 func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	if authHeader := r.Header.Get("Auth"); authHeader == hub.serverPassword {
-		if _, ok := hub.rooms["server"].getClient(r.Header.Get("Username")); ok {
+		if hub.clientExistsInServer(r.Header.Get("Username")) {
 			log.Println("Found duplicate name")
 			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte("409 - Duplicate name in server!"))
@@ -286,7 +320,8 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 				log.Println(err)
 				return
 			}
-			client := &Client{hub: hub, conn: conn, send: make(chan []byte, 8196*8196), name: r.Header.Get("Username"), roomName: "server"}
+			client := &Client{hub: hub, conn: conn, send: make(chan []byte, 8196*8196),
+				name: r.Header.Get("Username"), roomName: "server", authenticated: false}
 			//s := subscription{client, "server"}
 			hub.register <- client
 
