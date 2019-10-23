@@ -1,6 +1,6 @@
 # BurpSuite-Team-Server
 
-This repository holds the code for the server side of the Burpsuite Team Collaborator tool found here https://github.com/Static-Flow/BurpSuite-Team-Extension.
+This repository holds the code for the server side of the Burpsuite Team Collaborator tool found here https://github.com/AonCyberLabs/BurpSuite-Team-Extension.
 
 # Features
 
@@ -17,8 +17,8 @@ This repository holds the code for the server side of the Burpsuite Team Collabo
 # How to start the Server
 
 ```
-go get github.com/Static-Flow/BurpSuiteTeamServer/cmd/BurpSuiteTeamServer
-cd ~/go/src/github.com/Static-Flow/BurpSuiteTeamServer/
+go get github.com/AonCyberLabs/BurpSuiteTeamServer/cmd/BurpSuiteTeamServer
+cd ~/go/src/github.com/AonCyberLabs/BurpSuiteTeamServer/
 go get ./...
 go install ./...
 ~/go/bin/BurpSuiteTeamServer -h
