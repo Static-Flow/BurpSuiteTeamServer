@@ -1,45 +1,58 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
+	"fmt"
 	"github.com/Static-Flow/BurpSuiteTeamServer/chatapi"
+	"io/ioutil"
 	"log"
-	"net"
+	"net/http"
 	"os"
 )
 
-func RunTCPWithExistingAPI(connection string, chat *chatapi.ChatAPI) error {
-	l, err := net.Listen("tcp", connection)
-	if err != nil {
-		log.Println("Error connecting to chat client", err)
-		return err
-	}
-	log.Println("Awaiting Clients...")
-	defer l.Close()
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			break
-		}
-		go func(c net.Conn) {
-			chat.AddClient(c)
-		}(conn)
-	}
-
-	return err
-}
-
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8989"
-	}
-	serverCrypter := chatapi.NewAESCrypter()
-	tcpAddr := flag.String("tcp", "0.0.0.0:"+port, "Address for the TCP chat server to listen on")
+	var host = flag.String("host", "localhost", "host for TLS cert. Defaults to localhost")
+	var port = flag.String("port", "9999", "http service address")
+	var serverPassword = flag.String("serverPassword", "", "password for the server")
 	flag.Parse()
-	api := chatapi.New(*serverCrypter)
-	if err := RunTCPWithExistingAPI(*tcpAddr, api); err != nil {
-		log.Fatalf("Could not listen on %s, error %s \n", *tcpAddr, err)
+	chatapi.GenCrt(*host)
+	hub := chatapi.NewHub(*serverPassword)
+	go hub.Run()
+	var httpErr error
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		chatapi.ServeWs(hub, w, r)
+	})
+	if _, err := os.Stat("./burpServer.pem"); err == nil {
+		fmt.Println("file ", "burpServer.pem found switching to https")
+		caCert, err := ioutil.ReadFile("./burpServer.pem")
+		if err != nil {
+			log.Fatal(err)
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+		// Create the TLS Config with the CA pool and enable Client certificate validation
+		tlsConfig := &tls.Config{
+			ClientCAs:  caCertPool,
+			ClientAuth: tls.RequireAndVerifyClientCert,
+		}
+		tlsConfig.BuildNameToCertificate()
+		server := &http.Server{
+			Addr:      ":" + *port,
+			TLSConfig: tlsConfig,
+		}
+		log.Printf("Server running at wss://%s:%s", *host, *port)
+		if httpErr = server.ListenAndServeTLS("burpServer.pem", "burpServer.key"); httpErr != nil {
+			log.Fatal("The process exited with https error: ", httpErr.Error())
+		}
+
+	} else {
+		log.Printf("Server running at ws://%s:%s", *host, *port)
+		httpErr := http.ListenAndServe(":"+*port, nil)
+		if httpErr != nil {
+			log.Fatal("ListenAndServe: ", err)
+		}
 	}
 }
