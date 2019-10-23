@@ -104,7 +104,6 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		c.hub.rooms[message.MessageTarget].addClient(c)
 		c.roomName = message.MessageTarget
 		c.updateRoomMembers()
-		c.sendRoomMessages()
 	case "MUTE_MESSAGE":
 		if message.MessageTarget == "All" {
 			keys := reflect.ValueOf(c.hub.rooms[c.roomName].clients).MapKeys()
@@ -146,6 +145,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 	case "COMMENT_MESSAGE":
 		log.Printf("Got comment message: " + message.String())
 		c.hub.rooms[c.roomName].comments.setRequestWithComments(message.Data, *message.BurpRequestResponse)
+		log.Printf("%d comments in room", len(c.hub.rooms[c.roomName].comments.requestsWithComments))
 		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
 	case "CHECK_PASSWORD_MESSAGE":
 		if c.hub.rooms[message.MessageTarget].password == message.Data {
@@ -246,16 +246,17 @@ func (c *Client) sendRoomMessages() {
 		idx := 0
 		for _, value := range c.hub.rooms[c.roomName].comments.requestsWithComments {
 			burpMessagesWithComments[idx] = value
+			log.Printf(value.String())
 			idx++
 		}
 
-		log.Printf("Sending current room messages to %s", c.name)
-		jsonEncodedComments, err := json.Marshal(burpMessagesWithComments)
+		log.Printf("Sending %d current room messages to %s", len(burpMessagesWithComments), c.name)
+		jsonData, err := json.Marshal(burpMessagesWithComments)
 		if err != nil {
-			msg.Data = string(jsonEncodedComments)
-			c.hub.broadcast <- c.hub.generateMessage(msg, nil, c.roomName, "Self")
+			log.Println(err)
 		} else {
-			log.Printf("error json encoding comments: %s", err)
+			msg.Data = string(jsonData)
+			c.hub.broadcast <- c.hub.generateMessage(msg, c, c.roomName, "Self")
 		}
 	}
 }
