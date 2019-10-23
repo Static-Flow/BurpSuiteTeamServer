@@ -95,6 +95,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		} else {
 			c.updateRoomMembers()
 		}
+		c.hub.updateRooms()
 		c.authenticated = false
 		c.roomName = "server"
 	case "ADD_ROOM_MESSAGE":
