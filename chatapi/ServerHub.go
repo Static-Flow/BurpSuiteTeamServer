@@ -43,24 +43,9 @@ func NewHub(password string) *Hub {
 		register:       make(chan *Client),
 		unregister:     make(chan *Client),
 		rooms:          make(map[string]*Room),
-		allClientNames: []string{},
 	}
 	hub.rooms["server"] = NewRoom("")
 	return hub
-}
-
-func (h *Hub) addClientToServerList(clientName string) {
-	h.allClientNames = append(h.allClientNames, clientName)
-}
-
-func (h *Hub) removeClientFromServerList(clientName string) {
-	if h.clientExistsInServer(clientName) {
-		h.allClientNames = remove(h.allClientNames, index(h.allClientNames, clientName))
-	}
-}
-
-func (h *Hub) clientExistsInServer(clientName string) bool {
-	return index(h.allClientNames, clientName) != -1
 }
 
 func (h *Hub) addRoom(roomName string, room *Room) {

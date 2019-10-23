@@ -104,6 +104,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		c.hub.rooms[message.MessageTarget].addClient(c)
 		c.roomName = message.MessageTarget
 		c.updateRoomMembers()
+		c.sendRoomMessages()
 	case "MUTE_MESSAGE":
 		if message.MessageTarget == "All" {
 			keys := reflect.ValueOf(c.hub.rooms[c.roomName].clients).MapKeys()
