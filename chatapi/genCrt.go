@@ -62,7 +62,15 @@ func MarshalPKCS8PrivateKey(key *rsa.PrivateKey) ([]byte, error) {
 
 func GenCrt(host string) {
 	flag.Parse()
-
+	if _, err := os.Stat("./burpServer.pem"); err == nil {
+		fmt.Println("file", "burpServer.pem found no need to generate new key")
+		if err == nil {
+			return
+		}
+		if err != nil {
+			fmt.Println("creating new certificates")
+		}
+	}
 	if len(host) == 0 {
 		log.Fatalf("Missing required host parameter")
 	}
