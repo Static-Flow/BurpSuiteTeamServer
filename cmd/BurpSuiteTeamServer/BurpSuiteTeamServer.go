@@ -37,6 +37,7 @@ func main() {
 		tlsConfig := &tls.Config{
 			ClientCAs:  caCertPool,
 			ClientAuth: tls.RequireAndVerifyClientCert,
+			MaxVersion: tls.VersionTLS12,
 		}
 		tlsConfig.BuildNameToCertificate()
 		server := &http.Server{

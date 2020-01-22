@@ -35,22 +35,6 @@ func publicKey(priv interface{}) interface{} {
 	}
 }
 
-func pemBlockForKey(priv interface{}) *pem.Block {
-	switch k := priv.(type) {
-	case *rsa.PrivateKey:
-		return &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}
-	case *ecdsa.PrivateKey:
-		b, err := x509.MarshalECPrivateKey(k)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Unable to marshal ECDSA private key: %v", err)
-			os.Exit(2)
-		}
-		return &pem.Block{Type: "EC PRIVATE KEY", Bytes: b}
-	default:
-		return nil
-	}
-}
-
 func MarshalPKCS8PrivateKey(key *rsa.PrivateKey) ([]byte, error) {
 	var pkey PKCS8Key
 	pkey.Version = 0
@@ -62,22 +46,18 @@ func MarshalPKCS8PrivateKey(key *rsa.PrivateKey) ([]byte, error) {
 
 func GenCrt(host string) {
 	flag.Parse()
-	if _, err := os.Stat("./burpServer.pem"); err == nil {
-		fmt.Println("file", "burpServer.pem found no need to generate new key")
-		if err == nil {
-			return
-		}
-		if err != nil {
-			fmt.Println("creating new certificates")
-		}
-	}
 	if len(host) == 0 {
 		log.Fatalf("Missing required host parameter")
 	}
+	_, err := os.Stat("./burpServer.pem")
+	if err == nil {
+		fmt.Println("file", "burpServer.pem found no need to generate new key")
+		return
+	} else {
+		fmt.Println("creating new certificates")
+	}
 
-	var err error
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	//priv, err = ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
 	if err != nil {
 		log.Fatalf("failed to generate private key: %s", err)
 	}
@@ -108,7 +88,7 @@ func GenCrt(host string) {
 		NotBefore: notBefore,
 		NotAfter:  notAfter,
 
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 	}
