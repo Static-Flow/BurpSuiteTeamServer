@@ -160,6 +160,10 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 			message.MessageType = "BAD_PASSWORD_MESSAGE"
 			c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, "Self")
 		}
+	case "GET_CONFIG_MESSAGE":
+		message.MessageType = "GET_CONFIG_MESSAGE"
+		message.Data = c.hub.GetUrlShortenerApiKey()
+		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
 	case "COOKIE_MESSAGE":
 		fallthrough
 	case "SCAN_ISSUE_MESSAGE":

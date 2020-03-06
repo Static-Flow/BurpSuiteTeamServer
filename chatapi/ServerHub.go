@@ -30,18 +30,29 @@ type Hub struct {
 
 	// Register requests from the clients.
 	register chan *Client
+
+	shortenerApiKey string
 }
 
 func NewHub(password string) *Hub {
 	hub := &Hub{
-		allClientNames: []string{},
-		serverPassword: password,
-		broadcast:      make(chan message),
-		register:       make(chan *Client),
-		rooms:          make(map[string]*Room),
+		allClientNames:  []string{},
+		serverPassword:  password,
+		broadcast:       make(chan message),
+		register:        make(chan *Client),
+		rooms:           make(map[string]*Room),
+		shortenerApiKey: "",
 	}
 	hub.rooms["server"] = NewRoom("")
 	return hub
+}
+
+func (h *Hub) SetUrlShortenerApiKey(key string) {
+	h.shortenerApiKey = key
+}
+
+func (h *Hub) GetUrlShortenerApiKey() string {
+	return h.shortenerApiKey
 }
 
 func (h *Hub) addRoom(roomName string, room *Room) {
