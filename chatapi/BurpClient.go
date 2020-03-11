@@ -145,10 +145,59 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		message.Data = strings.Join(keys, ",")
 		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
 	case "COMMENT_MESSAGE":
-		log.Printf("Got comment message: " + message.String())
-		c.hub.rooms[c.roomName].comments.setRequestWithComments(message.Data, *message.BurpRequestResponse)
-		log.Printf("%d comments in room", len(c.hub.rooms[c.roomName].comments.requestsWithComments))
-		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
+
+		//If there are already comments in the room
+		if len(c.hub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments) > 0 {
+			//If the incoming request with comments has less comments than the old one we are deleting a comment
+			if len(c.hub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments) > len(message.BurpRequestResponse.Comments) {
+				/*
+					oldComments : A, B
+					newComments: A
+				*/
+				log.Println("Deleting Comments")
+				if len(c.hub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments) > 1 {
+					for _, oldComment := range c.hub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments {
+						for _, newComment := range message.BurpRequestResponse.Comments {
+							if oldComment != newComment {
+								if oldComment.UserWhoCommented == c.name {
+									c.updateRequestResponseComments(message)
+								} else {
+									log.Printf("User " + c.name + " cannot delete comment by " + oldComment.UserWhoCommented)
+								}
+							}
+						}
+					}
+				} else {
+					//if the last comment for the request is authored by the sender they can delete it
+					if c.hub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments[0].UserWhoCommented == c.name {
+						c.updateRequestResponseComments(message)
+					} else {
+						log.Printf("User " + c.name + " cannot delete comment by another user")
+					}
+				}
+			} else {
+				//If the incoming request with comments has more comments than the old one we are adding a comment
+				/*
+					oldComments : A
+					newComments: A, B
+				*/
+				log.Println("Adding Comments")
+				for _, oldComment := range c.hub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments {
+					for _, newComment := range message.BurpRequestResponse.Comments {
+						if oldComment != newComment {
+							if newComment.UserWhoCommented == c.name {
+								c.updateRequestResponseComments(message)
+							} else {
+								log.Printf("User " + c.name + " cannot add comment by " + newComment.UserWhoCommented)
+							}
+						}
+					}
+				}
+			}
+		} else {
+			c.updateRequestResponseComments(message)
+		}
+
 	case "CHECK_PASSWORD_MESSAGE":
 		if c.hub.rooms[message.MessageTarget].password == message.Data {
 			log.Printf("%s supplied orrect password for room: %s", c.name, message.MessageTarget)
@@ -177,6 +226,13 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 	default:
 		log.Println("ERROR: unknown message type")
 	}
+}
+
+func (c *Client) updateRequestResponseComments(tcMessage *BurpTCMessage) {
+	log.Printf("Got comment message: " + tcMessage.String())
+	c.hub.rooms[c.roomName].comments.setRequestWithComments(tcMessage.Data, *tcMessage.BurpRequestResponse)
+	log.Printf("%d comments in room", len(c.hub.rooms[c.roomName].comments.requestsWithComments))
+	c.hub.broadcast <- c.hub.generateMessage(tcMessage, c, c.roomName, tcMessage.MessageTarget)
 }
 
 func remove(s []string, i int) []string {
@@ -232,13 +288,17 @@ func (c *Client) readPump() {
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("error: %v", err)
+			} else {
+				log.Printf("All Errors: %v", err)
 			}
 			break
 		}
 		newBurpMessage := NewBurpTCMessage()
 		decodedBytes := make([]byte, base64.StdEncoding.DecodedLen(len(msg)))
-		base64.StdEncoding.Decode(decodedBytes, msg)
-		log.Printf(string(decodedBytes))
+		_, err = base64.StdEncoding.Decode(decodedBytes, msg)
+		if err != nil {
+			log.Printf("error decoding base64: %v", err)
+		}
 		if err := json.Unmarshal(bytes.Trim(decodedBytes, "\x00"), &newBurpMessage); err != nil {
 			log.Printf("Could not unmarshal BurpTCMessage, error: %s \n", err)
 		} else {
