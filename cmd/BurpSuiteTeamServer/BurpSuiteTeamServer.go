@@ -20,6 +20,11 @@ func main() {
 	var port = flag.String("port", "9999", "http service address")
 	var serverPassword = flag.String("serverPassword", "", "password for the server")
 	var enableUrlShortener = flag.Bool("enableShortener", false, "Enables the built-in URL shortener")
+	serverNameInternal, err := os.Hostname()
+	if err != nil {
+		fmt.Printf("No hostname, panic: %v\n", err)
+		panic(err)
+	}
 	flag.Parse()
 	chatapi.GenCrt(*host)
 	hub := chatapi.NewHub(*serverPassword)
@@ -77,8 +82,8 @@ func main() {
 					newId := shortendURLs.AddNewShortenURL(burpRequest)
 					log.Println("POST: " + newId)
 					//encoder := base64.NewEncoder(base64.StdEncoding, writer)
-					log.Println("POST: " + base64.StdEncoding.EncodeToString([]byte("https://"+*host+":"+*port+"/shortener?id="+newId)))
-					accessURL := "https://" + *host + ":" + *port + "/shortener?id=" + newId
+					log.Println("POST: " + base64.StdEncoding.EncodeToString([]byte("https://"+serverNameInternal+":"+*port+"/shortener?id="+newId)))
+					accessURL := "https://" + serverNameInternal + ":" + *port + "/shortener?id=" + newId
 					base64Text := make([]byte, base64.StdEncoding.EncodedLen(len(accessURL)))
 					base64.StdEncoding.Encode(base64Text, []byte(accessURL))
 					writer.Write(base64Text)

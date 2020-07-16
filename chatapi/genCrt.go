@@ -35,6 +35,11 @@ func publicKey(priv interface{}) interface{} {
 	}
 }
 
+func Bod(t time.Time) time.Time {
+	year, month, day := t.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, t.Location())
+}
+
 func MarshalPKCS8PrivateKey(key *rsa.PrivateKey) ([]byte, error) {
 	var pkey PKCS8Key
 	pkey.Version = 0
@@ -72,6 +77,7 @@ func GenCrt(host string) {
 		fmt.Fprintf(os.Stderr, "Failed to parse creation date: %s\n", err)
 		os.Exit(1)
 	}
+	notBefore = Bod(notBefore)
 	notAfter := notBefore.Add(365 * 24 * time.Hour)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
