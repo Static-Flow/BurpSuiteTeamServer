@@ -3,104 +3,65 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/Static-Flow/BurpSuiteTeamServer/chatapi"
+	"github.com/chyeh/pubip"
+	"github.com/gorilla/mux"
+	"github.com/valyala/fasthttp"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 )
 
 func main() {
+	go func() {
+		r := mux.NewRouter()
+		r.Path("/").HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			_, _ = fmt.Fprintf(writer, "Hello")
+		})
+		r.PathPrefix("/debug/").Handler(http.DefaultServeMux)
+
+		r.HandleFunc("/debug/pprof/", pprof.Index)
+		r.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		r.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		r.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		r.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		log.Println(http.ListenAndServe(":6060", r))
+	}()
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	var host = flag.String("host", "localhost", "host for TLS cert. Defaults to localhost")
 	var port = flag.String("port", "9999", "http service address")
+	var shortenerServicePort = flag.String("shortenerPort", "8888", "shortener service port")
 	var serverPassword = flag.String("serverPassword", "", "password for the server")
 	var enableUrlShortener = flag.Bool("enableShortener", false, "Enables the built-in URL shortener")
-	serverNameInternal, err := os.Hostname()
-	if err != nil {
-		fmt.Printf("No hostname, panic: %v\n", err)
-		panic(err)
-	}
+	var localUrlShortener = flag.Bool("localShortener", false, "debug flag for local URL shortener")
+
 	flag.Parse()
 	chatapi.GenCrt(*host)
-	hub := chatapi.NewHub(*serverPassword)
-	shortendURLs := chatapi.NewShortenedUrls()
-	go hub.Run()
-	var httpErr error
-	if *enableUrlShortener {
-		hub.SetUrlShortenerApiKey(shortendURLs.GenString() + shortendURLs.GenString())
-		http.HandleFunc("/shortener", func(writer http.ResponseWriter, request *http.Request) {
-			switch request.Method {
-			case http.MethodGet:
-
-				shortId, ok := request.URL.Query()["id"]
-
-				if !ok || len(shortId[0]) < 1 {
-					log.Println("Url Param 'id' is missing")
-					http.Error(writer, "Improper id", http.StatusBadRequest)
-					return
-				}
-				id := shortId[0]
-
-				if burpRequest := shortendURLs.GetShortenedURL(id); burpRequest != nil {
-					burpRequestJson, err := json.Marshal(burpRequest)
-					if err != nil {
-						http.Error(writer, err.Error(), http.StatusInternalServerError)
-						return
-					}
-
-					writer.Header().Set("Content-Type", "application/json")
-					writer.Write(burpRequestJson)
-				} else {
-					http.Error(writer, "Bad Id", http.StatusBadRequest)
-				}
-
-			case http.MethodPost:
-
-				key, ok := request.URL.Query()["key"]
-
-				if !ok || len(key[0]) < 1 {
-					log.Println("Url Param 'key' is missing")
-					http.Error(writer, "Improper key", http.StatusBadRequest)
-					return
-				}
-				apiKey := key[0]
-				log.Println("User supplied key: " + apiKey)
-				if apiKey == hub.GetUrlShortenerApiKey() {
-					var burpRequest = chatapi.BurpRequestResponse{}
-					dec := json.NewDecoder(request.Body)
-					dec.DisallowUnknownFields()
-					err := dec.Decode(&burpRequest)
-					if err != nil {
-						http.Error(writer, "Improper JSON", http.StatusBadRequest)
-						return
-					}
-					newId := shortendURLs.AddNewShortenURL(burpRequest)
-					log.Println("POST: " + newId)
-					//encoder := base64.NewEncoder(base64.StdEncoding, writer)
-					log.Println("POST: " + base64.StdEncoding.EncodeToString([]byte("https://"+serverNameInternal+":"+*port+"/shortener?id="+newId)))
-					accessURL := "https://" + serverNameInternal + ":" + *port + "/shortener?id=" + newId
-					base64Text := make([]byte, base64.StdEncoding.EncodedLen(len(accessURL)))
-					base64.StdEncoding.Encode(base64Text, []byte(accessURL))
-					writer.Write(base64Text)
-				} else {
-					http.Error(writer, "Wrong.", http.StatusBadRequest)
-				}
-			default:
-				writer.Write([]byte("Unsupported."))
-			}
-		})
+	ip, err := pubip.Get()
+	if err != nil {
+		fmt.Println("Couldn't Get public IP", err)
+		return
 	}
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		chatapi.ServeWs(hub, w, r)
-	})
+	var hub *chatapi.Hub
+	if *localUrlShortener {
+		hub = chatapi.NewHub(*serverPassword, *shortenerServicePort, "localhost")
+	} else {
+		hub = chatapi.NewHub(*serverPassword, *shortenerServicePort, ip.String())
+	}
+	go hub.Run()
+
 	if _, err := os.Stat("./burpServer.pem"); err == nil {
 		fmt.Println("file ", "burpServer.pem found switching to https")
 		caCert, err := ioutil.ReadFile("./burpServer.pem")
+		if err != nil {
+			log.Fatal(err)
+		}
+		crt, err := tls.LoadX509KeyPair("./burpServer.pem", "./burpServer.key")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -108,20 +69,57 @@ func main() {
 		caCertPool.AppendCertsFromPEM(caCert)
 		// Create the TLS Config with the CA pool and enable Client certificate validation
 		tlsConfig := &tls.Config{
-			ClientCAs:  caCertPool,
-			ClientAuth: tls.VerifyClientCertIfGiven,
-			MaxVersion: tls.VersionTLS12,
+			ClientCAs:    caCertPool,
+			ClientAuth:   tls.VerifyClientCertIfGiven,
+			MaxVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{crt},
 		}
-		tlsConfig.BuildNameToCertificate()
-		server := &http.Server{
-			Addr:      ":" + *port,
-			TLSConfig: tlsConfig,
-		}
-		log.Printf("Server running at wss://%s:%s", *host, *port)
-		if httpErr = server.ListenAndServeTLS("burpServer.pem", "burpServer.key"); httpErr != nil {
-			log.Fatal("The process exited with https error: ", httpErr.Error())
+		ln, err := net.Listen("tcp4", ":"+*port)
+		if err != nil {
+			panic(err)
 		}
 
+		go func() {
+			var requestHandler fasthttp.RequestHandler
+			requestHandler = func(ctx *fasthttp.RequestCtx) {
+				switch string(ctx.Path()) {
+				case "/auth":
+					chatapi.AuthPackage(ctx, hub)
+				default:
+					ctx.Error("Unsupported path", fasthttp.StatusNotFound)
+				}
+			}
+			if *enableUrlShortener {
+				requestHandler = func(ctx *fasthttp.RequestCtx) {
+					switch string(ctx.Path()) {
+					case "/auth":
+						chatapi.AuthPackage(ctx, hub)
+					case "/shortener":
+						chatapi.HandleShortUrl(ctx, hub)
+					default:
+						ctx.Error("Unsupported path", fasthttp.StatusNotFound)
+					}
+				}
+			}
+			fasthttp.ListenAndServeTLS(":"+*shortenerServicePort, "./burpServer.pem", "./burpServer.key", requestHandler)
+
+		}()
+		requestHandler := func(ctx *fasthttp.RequestCtx) {
+			switch string(ctx.Path()) {
+			case "/":
+				chatapi.ServeWs(ctx, hub)
+			default:
+				ctx.Error("Unsupported path", fasthttp.StatusNotFound)
+			}
+		}
+		server := fasthttp.Server{
+			Handler: requestHandler,
+		}
+		lnTls := tls.NewListener(ln, tlsConfig)
+		log.Printf("Server running at wss://%s:%s", *host, *port)
+		if httpErr := server.Serve(lnTls); httpErr != nil {
+			log.Fatal("The process exited with https error: ", httpErr.Error())
+		}
 	} else {
 		log.Printf("Server running at ws://%s:%s", *host, *port)
 		httpErr := http.ListenAndServe(":"+*port, nil)
