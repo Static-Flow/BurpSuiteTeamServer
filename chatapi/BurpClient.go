@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"github.com/gorilla/websocket"
+	"fmt"
+	"github.com/fasthttp/websocket"
+	"github.com/valyala/fasthttp"
 	"log"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ const (
 	maxMessageSize = 8192 * 8192
 )
 
-var upgrader = websocket.Upgrader{
+var upgrader = websocket.FastHTTPUpgrader{
 	ReadBufferSize:  8192 * 8192,
 	WriteBufferSize: 8192 * 8192,
 }
@@ -66,7 +67,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		if len(c.hub.rooms[message.MessageTarget].password) > 0 {
 			if c.authenticated {
 				log.Printf("%s joining room: %s", c.name, message.MessageTarget)
-				c.hub.rooms[c.roomName].deleteClient(c.name)
+				c.hub.rooms[c.roomName].deleteClient(c)
 				c.hub.rooms[message.MessageTarget].addClient(c)
 				c.roomName = message.MessageTarget
 				c.hub.updateRoomMembers(c.roomName)
@@ -79,7 +80,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 
 		} else {
 			log.Printf("%s joining room: %s", c.name, message.MessageTarget)
-			c.hub.rooms[c.roomName].deleteClient(c.name)
+			c.hub.rooms[c.roomName].deleteClient(c)
 			c.hub.rooms[message.MessageTarget].addClient(c)
 			c.roomName = message.MessageTarget
 			c.hub.updateRoomMembers(c.roomName)
@@ -88,7 +89,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		}
 	case "LEAVE_ROOM_MESSAGE":
 		log.Printf("leaving room: %s", c.roomName)
-		c.hub.rooms[c.roomName].deleteClient(c.name)
+		c.hub.rooms[c.roomName].deleteClient(c)
 		c.hub.rooms["server"].addClient(c)
 		if len(c.hub.rooms[c.roomName].clients) == 0 {
 			c.hub.deleteRoom(c.roomName)
@@ -100,7 +101,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		c.roomName = "server"
 	case "ADD_ROOM_MESSAGE":
 		log.Printf("creating new room: " + message.MessageTarget)
-		c.hub.rooms[c.roomName].deleteClient(c.name)
+		c.hub.rooms[c.roomName].deleteClient(c)
 		c.hub.addRoom(message.MessageTarget, NewRoom(message.Data))
 		c.hub.rooms[message.MessageTarget].addClient(c)
 		c.roomName = message.MessageTarget
@@ -108,12 +109,9 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		c.sendRoomMessages()
 	case "MUTE_MESSAGE":
 		if message.MessageTarget == "All" {
-			keys := reflect.ValueOf(c.hub.rooms[c.roomName].clients).MapKeys()
-			log.Printf("Clients to mute %s", keys)
-			for i := 0; i < len(keys); i++ {
-				key := keys[i].String()
-				if key != c.name {
-					c.mutedClients = append(c.mutedClients, key)
+			for roomClient := range c.hub.rooms[c.roomName].clients {
+				if roomClient != c {
+					c.mutedClients = append(c.mutedClients, roomClient.name)
 				}
 			}
 		} else {
@@ -123,15 +121,14 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		log.Printf("%s muted these clients %s", c.name, c.mutedClients)
 	case "UNMUTE_MESSAGE":
 		if message.MessageTarget == "All" {
-			keys := reflect.ValueOf(c.hub.rooms[c.roomName].clients).MapKeys()
-			for i := 0; i < len(keys); i++ {
-				key := keys[i].String()
-				if key != c.name {
-					c.mutedClients = remove(c.mutedClients, index(c.mutedClients, keys[i].String()))
+			c.mutedClients = c.mutedClients[:0]
+		} else {
+			for i, mutedClient := range c.mutedClients {
+				if mutedClient == message.MessageTarget {
+					c.mutedClients = append(c.mutedClients[:i], c.mutedClients[i+1:]...)
+					break
 				}
 			}
-		} else {
-			c.mutedClients = remove(c.mutedClients, index(c.mutedClients, message.MessageTarget))
 		}
 		log.Printf("%s unmuted %s", c.name, message.MessageTarget)
 	case "GET_ROOMS_MESSAGE":
@@ -211,7 +208,7 @@ func (c *Client) parseMessage(message *BurpTCMessage) {
 		}
 	case "GET_CONFIG_MESSAGE":
 		message.MessageType = "GET_CONFIG_MESSAGE"
-		message.Data = c.hub.GetUrlShortenerApiKey()
+		message.Data = fmt.Sprintf("%s,%s", c.hub.GetUrlShortenerApiKey(), c.hub.GetServerPort())
 		c.hub.broadcast <- c.hub.generateMessage(message, c, c.roomName, message.MessageTarget)
 	case "COOKIE_MESSAGE":
 		fallthrough
@@ -235,21 +232,6 @@ func (c *Client) updateRequestResponseComments(tcMessage *BurpTCMessage) {
 	c.hub.broadcast <- c.hub.generateMessage(tcMessage, c, c.roomName, tcMessage.MessageTarget)
 }
 
-func remove(s []string, i int) []string {
-	s[i] = s[len(s)-1]
-	return s[:len(s)-1]
-}
-
-func index(vs []string, t string) int {
-
-	for i, v := range vs {
-		if v == t {
-			return i
-		}
-	}
-	return -1
-}
-
 func (c *Client) isGivenClientMuted(clientName string) bool {
 	for _, client := range c.mutedClients {
 		if client == clientName {
@@ -266,7 +248,7 @@ func (c *Client) isGivenClientMuted(clientName string) bool {
 // reads from this goroutine.
 func (c *Client) readPump() {
 	defer func() {
-		c.hub.rooms[c.roomName].deleteClient(c.name)
+		c.hub.rooms[c.roomName].deleteClient(c)
 		if c.roomName != "server" {
 			if len(c.hub.rooms[c.roomName].clients) == 0 {
 				c.hub.deleteRoom(c.roomName)
@@ -276,7 +258,6 @@ func (c *Client) readPump() {
 			c.roomName = "server"
 		}
 		close(c.send)
-		c.hub.removeClientFromServerList(c.name)
 		log.Println("Client Leaving")
 		c.conn.Close()
 	}()
@@ -371,31 +352,28 @@ func (c *Client) writePump() {
 }
 
 // serveWs handles websocket requests from the peer.
-func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
-	if authHeader := r.Header.Get("Auth"); authHeader == hub.serverPassword {
-		if hub.clientExistsInServer(r.Header.Get("Username")) {
-			log.Println("Found duplicate name")
-			w.WriteHeader(http.StatusConflict)
-			w.Write([]byte("409 - Duplicate name in server!"))
-		} else {
-			conn, err := upgrader.Upgrade(w, r, nil)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			client := &Client{hub: hub, conn: conn, send: make(chan []byte, 8196*8196),
-				name: r.Header.Get("Username"), roomName: "server", authenticated: false}
+func ServeWs(ctx *fasthttp.RequestCtx, hub *Hub) {
+	if authHeader := ctx.Request.Header.Peek("Auth"); bytes.Equal(authHeader, hub.serverPassword) {
+		user := string(ctx.Request.Header.Peek("Username"))
+		err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
+			fmt.Printf("Client joining: %s\n", user)
+			client := &Client{hub: hub, conn: conn, send: make(chan []byte, 1024),
+				name: user, roomName: "server", authenticated: false}
 			//s := subscription{client, "server"}
 			hub.register <- client
 
 			// Allow collection of memory referenced by the caller by doing all work in
 			// new goroutines.
 			go client.writePump()
-			go client.readPump()
+			client.readPump()
+		})
+		if err != nil {
+			log.Println(err)
+			return
 		}
 
 	} else {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("401 - Bad Auth!"))
+		ctx.Response.SetStatusCode(http.StatusUnauthorized)
+		ctx.SetBody([]byte("401 - Bad Auth!"))
 	}
 }

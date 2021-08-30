@@ -1,10 +1,12 @@
 package chatapi
 
-import "sync"
+import (
+	"sync"
+)
 
 type Room struct {
 	scope   string
-	clients map[string]*Client
+	clients map[*Client]bool
 	*sync.RWMutex
 	comments Comments
 	password string
@@ -13,7 +15,7 @@ type Room struct {
 func NewRoom(password string) *Room {
 	return &Room{
 		"",
-		make(map[string]*Client),
+		make(map[*Client]bool),
 		new(sync.RWMutex),
 		NewComments(),
 		password,
@@ -27,8 +29,10 @@ func (r *Room) getAllComments() Comments {
 func (r *Room) getClient(clientName string) (*Client, bool) {
 	r.Lock()
 	defer r.Unlock()
-	if client, ok := r.clients[clientName]; ok {
-		return client, ok
+	for client := range r.clients {
+		if client.name == clientName {
+			return client, true
+		}
 	}
 	return nil, false
 }
@@ -36,11 +40,13 @@ func (r *Room) getClient(clientName string) (*Client, bool) {
 func (r *Room) addClient(c *Client) {
 	r.Lock()
 	defer r.Unlock()
-	r.clients[c.name] = c
+	r.clients[c] = true
 }
 
-func (r *Room) deleteClient(clientName string) {
+func (r *Room) deleteClient(client *Client) {
 	r.Lock()
 	defer r.Unlock()
-	delete(r.clients, clientName)
+	if _, ok := r.clients[client]; ok {
+		delete(r.clients, client)
+	}
 }

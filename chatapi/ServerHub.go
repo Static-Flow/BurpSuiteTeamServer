@@ -3,6 +3,7 @@ package chatapi
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -18,9 +19,9 @@ type message struct {
 // Hub maintains the set of active clients and broadcasts messages to the
 // clients.
 type Hub struct {
-	serverPassword string
+	serverPassword []byte
 
-	allClientNames []string
+	allClientNames [][]byte
 
 	// Registered clients.
 	rooms map[string]*Room
@@ -32,19 +33,48 @@ type Hub struct {
 	register chan *Client
 
 	shortenerApiKey string
+
+	shortenedUrls *ShortenedUrls
+
+	hostname string
+
+	serverPort string
+
+	authPackageDownloaded bool
 }
 
-func NewHub(password string) *Hub {
+func NewHub(password string, port string, hostname string) *Hub {
 	hub := &Hub{
-		allClientNames:  []string{},
-		serverPassword:  password,
-		broadcast:       make(chan message),
-		register:        make(chan *Client),
-		rooms:           make(map[string]*Room),
-		shortenerApiKey: "",
+		serverPassword:        []byte(password),
+		broadcast:             make(chan message),
+		register:              make(chan *Client),
+		rooms:                 make(map[string]*Room),
+		shortenerApiKey:       "",
+		shortenedUrls:         NewShortenedUrls(),
+		serverPort:            port,
+		hostname:              hostname,
+		authPackageDownloaded: false,
 	}
+
+	hub.SetUrlShortenerApiKey(hub.shortenedUrls.GenString() + hub.shortenedUrls.GenString())
 	hub.rooms["server"] = NewRoom("")
 	return hub
+}
+
+func (h *Hub) GetServerPort() string {
+	return h.serverPort
+}
+
+func (h *Hub) GetServerHostname() string {
+	return h.hostname
+}
+
+func (h *Hub) GetShortenerUrl(id string) string {
+	return fmt.Sprintf("https://%s:%s/shortener?id=%s", h.hostname, h.serverPort, id)
+}
+
+func (h *Hub) GetUrlShortener() *ShortenedUrls {
+	return h.shortenedUrls
 }
 
 func (h *Hub) SetUrlShortenerApiKey(key string) {
@@ -58,20 +88,6 @@ func (h *Hub) GetUrlShortenerApiKey() string {
 func (h *Hub) addRoom(roomName string, room *Room) {
 	h.rooms[roomName] = room
 	h.updateRooms()
-}
-
-func (h *Hub) addClientToServerList(clientName string) {
-	h.allClientNames = append(h.allClientNames, clientName)
-}
-
-func (h *Hub) removeClientFromServerList(clientName string) {
-	if h.clientExistsInServer(clientName) {
-		h.allClientNames = remove(h.allClientNames, index(h.allClientNames, clientName))
-	}
-}
-
-func (h *Hub) clientExistsInServer(clientName string) bool {
-	return index(h.allClientNames, clientName) != -1
 }
 
 func (h *Hub) deleteRoom(roomName string) {
@@ -98,13 +114,13 @@ func (h *Hub) updateRoomMembers(roomName string) {
 	msg := NewBurpTCMessage()
 	msg.MessageType = "NEW_MEMBER_MESSAGE"
 
-	keys := make([]string, 0, len(h.rooms[roomName].clients))
+	clientNames := make([]string, 0, len(h.rooms[roomName].clients))
 	for k := range h.rooms[roomName].clients {
-		keys = append(keys, k)
+		fmt.Printf("%+v\n", k)
+		clientNames = append(clientNames, k.name)
 	}
-	if len(keys) > 0 {
-		log.Printf("Current room members: %s", strings.Join(keys, ","))
-		msg.Data = strings.Join(keys, ",")
+	if len(clientNames) > 0 {
+		msg.Data = strings.Join(clientNames, ",")
 		h.broadcast <- h.generateMessage(msg, nil, roomName, "Room")
 	}
 }
@@ -129,7 +145,6 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.register:
 			log.Println("New Client")
-			h.addClientToServerList(client.name)
 			h.rooms[client.roomName].addClient(client)
 		case message := <-h.broadcast:
 			jsonMsg, _ := json.Marshal(message.msg)
@@ -140,15 +155,18 @@ func (h *Hub) Run() {
 			if message.target == "Self" { //to yourself
 				message.sender.send <- encodedBuf
 			} else if message.target == "Room" { //to everyone in the room
-				if message.sender != nil {
+				fmt.Println("Sending message to room: " + message.roomName)
+				if message.sender != nil { //this message is from a client to other clients in a room
 					for client := range room.clients {
-						if client != message.sender.name {
-							log.Printf("has client %s muted us? %t", client, room.clients[client].isGivenClientMuted(message.sender.name))
-							if !room.clients[client].isGivenClientMuted(message.sender.name) {
+						fmt.Println("Attempting to send to client: " + client.name)
+						if client.name != message.sender.name {
+							isMuted := client.isGivenClientMuted(message.sender.name)
+							log.Printf("has client %s muted us? %t", client.name, isMuted)
+							if !isMuted {
 								select {
-								case room.clients[client].send <- encodedBuf:
+								case client.send <- encodedBuf:
 								default:
-									close(room.clients[client].send)
+									close(client.send)
 									delete(room.clients, client)
 									if len(room.clients) == 0 {
 										h.deleteRoom(message.roomName)
@@ -157,12 +175,12 @@ func (h *Hub) Run() {
 							}
 						}
 					}
-				} else {
+				} else { //this is a message from the server to clients in a room
 					for client := range room.clients {
 						select {
-						case room.clients[client].send <- encodedBuf:
+						case client.send <- encodedBuf:
 						default:
-							close(room.clients[client].send)
+							close(client.send)
 							delete(room.clients, client)
 							if len(room.clients) == 0 {
 								h.deleteRoom(message.roomName)
@@ -171,8 +189,9 @@ func (h *Hub) Run() {
 					}
 				}
 			} else { //to a specific person
-				if !room.clients[message.target].isGivenClientMuted(message.sender.name) {
-					room.clients[message.target].send <- encodedBuf
+				clientToMessage, exists := room.getClient(message.target)
+				if exists && !clientToMessage.isGivenClientMuted(message.sender.name) {
+					clientToMessage.send <- encodedBuf
 				}
 			}
 		}
