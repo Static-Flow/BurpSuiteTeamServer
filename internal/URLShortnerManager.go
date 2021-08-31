@@ -16,9 +16,11 @@ type ShortenedUrls struct {
 	urls       map[string]BurpRequestResponse
 	seededRand *rand.Rand
 	apiKey     string
+	port       string
+	host       string
 }
 
-func HandleShortUrl(ctx *fasthttp.RequestCtx, hub *Hub) {
+func (shortenedUrls *ShortenedUrls) HandleShortUrl(ctx *fasthttp.RequestCtx) {
 	switch string(ctx.Method()) {
 	case http.MethodGet:
 		shortId := string(ctx.QueryArgs().Peek("id"))
@@ -29,7 +31,7 @@ func HandleShortUrl(ctx *fasthttp.RequestCtx, hub *Hub) {
 			return
 		}
 
-		if burpRequest := hub.GetUrlShortener().GetShortenedURL(shortId); burpRequest != nil {
+		if burpRequest := shortenedUrls.getShortenedURL(shortId); burpRequest != nil {
 			burpRequestJson, err := json.Marshal(burpRequest)
 			if err != nil {
 				ctx.Error(err.Error(), http.StatusInternalServerError)
@@ -37,78 +39,91 @@ func HandleShortUrl(ctx *fasthttp.RequestCtx, hub *Hub) {
 			}
 
 			ctx.Response.Header.Add("Content-Type", "application/json")
-			ctx.Write(burpRequestJson)
+			_, _ = ctx.Write(burpRequestJson)
 		} else {
 			ctx.Error("Bad Id", fasthttp.StatusBadRequest)
 		}
 
 	case http.MethodPost:
 
-		key := string(ctx.QueryArgs().Peek("key"))
+		key := ctx.QueryArgs().Peek("key")
 
-		if len(key) < 1 {
+		if key == nil {
 			log.Println("Url Param 'key' is missing")
-			ctx.Error("Improper key", fasthttp.StatusBadRequest)
+			ctx.Response.SetStatusCode(http.StatusBadRequest)
+			ctx.SetBody([]byte("Improper key"))
 			return
 		}
-
-		log.Println("User supplied key: " + key)
-		if key == hub.GetUrlShortenerApiKey() {
+		log.Printf("User supplied key: %s\n", key)
+		if string(key) == shortenedUrls.apiKey {
 			var burpRequest = BurpRequestResponse{}
-
 			if err := json.Unmarshal(ctx.PostBody(), &burpRequest); err != nil {
-				ctx.Error("Improper JSON", fasthttp.StatusBadRequest)
+				ctx.Response.SetStatusCode(http.StatusBadRequest)
+				ctx.SetBody([]byte("Improper JSON"))
+				return
 			}
-			newId := hub.GetUrlShortener().AddNewShortenURL(burpRequest)
-			shortenedUrl := hub.GetShortenerUrl(newId)
-			log.Println("POST: " + shortenedUrl)
-			base64Text := make([]byte, base64.StdEncoding.EncodedLen(len(shortenedUrl)))
-			base64.StdEncoding.Encode(base64Text, []byte(shortenedUrl))
-			ctx.Write(base64Text)
+			newId := shortenedUrls.addNewShortenURL(burpRequest)
+			accessURL := "https://" + shortenedUrls.host + ":" + shortenedUrls.port + "/shortener?id=" + newId
+			log.Println("POST: " + accessURL)
+			base64Text := make([]byte, base64.StdEncoding.EncodedLen(len(accessURL)))
+			base64.StdEncoding.Encode(base64Text, []byte(accessURL))
+			ctx.Response.SetStatusCode(http.StatusOK)
+			ctx.SetBody(base64Text)
+			return
 		} else {
-			ctx.Error("Wrong.", http.StatusBadRequest)
+			ctx.Response.SetStatusCode(http.StatusBadRequest)
+			ctx.SetBody([]byte("No."))
 		}
 	default:
 		ctx.Error("Unsupported method", fasthttp.StatusMethodNotAllowed)
 	}
 }
 
-func NewShortenedUrls() *ShortenedUrls {
+func NewShortenedUrls(port string, host string) *ShortenedUrls {
 	manager := &ShortenedUrls{
 		make(map[string]BurpRequestResponse),
 		rand.New(
 			rand.NewSource(time.Now().UnixNano())),
 		"",
+		port,
+		host,
 	}
-	manager.apiKey = manager.GenString()
+	manager.apiKey = manager.genString()
+
+	go func() {
+		if err := fasthttp.ListenAndServe(":"+port, manager.HandleShortUrl); err != nil {
+			log.Printf("could not start shortener service: %s\n", err)
+		}
+	}()
+
 	return manager
 }
 
-func (shortener *ShortenedUrls) GenString() string {
+func (shortenedUrls *ShortenedUrls) genString() string {
 	b := make([]byte, 20)
 	for i := range b {
-		b[i] = charset[shortener.seededRand.Intn(len(charset))]
+		b[i] = charset[shortenedUrls.seededRand.Intn(len(charset))]
 	}
 	return string(b)
 }
 
-func (shortener *ShortenedUrls) AddNewShortenURL(response BurpRequestResponse) string {
-	id := shortener.GenString()
-	shortener.urls[id] = response
+func (shortenedUrls *ShortenedUrls) addNewShortenURL(response BurpRequestResponse) string {
+	id := shortenedUrls.genString()
+	shortenedUrls.urls[id] = response
 	return id
 }
 
-func (shortener *ShortenedUrls) GetShortenedURL(id string) *BurpRequestResponse {
-	if burpRequest, ok := shortener.urls[id]; ok {
+func (shortenedUrls *ShortenedUrls) getShortenedURL(id string) *BurpRequestResponse {
+	if burpRequest, ok := shortenedUrls.urls[id]; ok {
 		return &burpRequest
 	}
 	return nil
 }
 
-func (shortener *ShortenedUrls) SetUrlShortenerApiKey(key string) {
-	shortener.apiKey = key
+func (shortenedUrls *ShortenedUrls) setUrlShortenerApiKey(key string) {
+	shortenedUrls.apiKey = key
 }
 
-func (shortener *ShortenedUrls) GetUrlShortenerApiKey() string {
-	return shortener.apiKey
+func (shortenedUrls *ShortenedUrls) getUrlShortenerApiKey() string {
+	return shortenedUrls.apiKey
 }
