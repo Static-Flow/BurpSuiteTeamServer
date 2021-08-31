@@ -1,4 +1,4 @@
-package chatapi
+package internal
 
 import (
 	"crypto/ecdsa"
@@ -74,8 +74,7 @@ func GenCrt(host string) {
 
 	notBefore, err := time.Parse("Mon Jan _2 15:04:05 2006", time.Now().Format("Mon Jan _2 15:04:05 2006"))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to parse creation date: %s\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed to parse creation date: %s\n", err)
 	}
 	notBefore = Bod(notBefore)
 	notAfter := notBefore.Add(365 * 24 * time.Hour)
@@ -120,8 +119,12 @@ func GenCrt(host string) {
 	if err != nil {
 		log.Fatalf("failed to open burpServer.pem for writing: %s", err)
 	}
-	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-	certOut.Close()
+	if err = pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
+		log.Fatalln(err)
+	}
+	if err = certOut.Close(); err != nil {
+		log.Fatalln(err)
+	}
 	log.Print("written burpServer.pem\n")
 
 	keyOut, err := os.OpenFile("burpServer.key", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
@@ -129,12 +132,16 @@ func GenCrt(host string) {
 		log.Print("failed to open burpServer.key for writing:", err)
 		return
 	}
-	pem.Encode(keyOut,
+	if err = pem.Encode(keyOut,
 		&pem.Block{
 			Type:  "PRIVATE KEY",
 			Bytes: pkcs8Bytes,
 		},
-	)
-	keyOut.Close()
+	); err != nil {
+		log.Fatalln(err)
+	}
+	if err = keyOut.Close(); err != nil {
+		log.Fatalln(err)
+	}
 	log.Print("written burpServer.key\n")
 }

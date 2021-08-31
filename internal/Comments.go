@@ -1,4 +1,4 @@
-package chatapi
+package internal
 
 type Comments struct {
 	requestsWithComments map[string]BurpRequestResponse
