@@ -52,6 +52,8 @@ func (c *Client) parseMessage(message *BurpTCMessage) error {
 				c.roomName = message.MessageTarget
 				c.serverHub.rooms[c.roomName].updateRoomMembers()
 				c.serverHub.rooms[c.roomName].sendRoomMessagesToNewRoomMember(c.name)
+				message.MessageType = "GOOD_PASSWORD_MESSAGE"
+				c.serverHub.messages <- generateMessage(message, c, c.roomName, "Self")
 			} else {
 				//bad password
 				message.MessageType = "BAD_PASSWORD_MESSAGE"
