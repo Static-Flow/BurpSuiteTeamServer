@@ -242,30 +242,32 @@ func (c *Client) Writer() {
 		select {
 		case message, ok := <-c.sendChannel:
 			//fmt.Printf("Message: %+v to send to client: %s\n",*message.msg,c.name)
-			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if !ok {
-				// The hub closed the channel.
-				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
+			if c.conn != nil {
+				_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if !ok {
+					// The hub closed the channel.
+					_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+					return
+				}
 
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			jsonBytes, err := json.Marshal(message.msg)
-			encodedBuf := make([]byte, base64.StdEncoding.EncodedLen(len(jsonBytes)))
-			base64.StdEncoding.Encode(encodedBuf, jsonBytes)
-			//mw := io.MultiWriter(os.Stdout,w)
-			//
-			//if _,err := mw.Write(encodedBuf); err != nil {
-			//	log.Printf("Error Writing message: %s\n",err)
-			//}
-			if _, err := w.Write(encodedBuf); err != nil {
-				log.Printf("Error Writing message: %s\n", err)
-			}
-			if err := w.Close(); err != nil {
-				return
+				w, err := c.conn.NextWriter(websocket.TextMessage)
+				if err != nil {
+					return
+				}
+				jsonBytes, err := json.Marshal(message.msg)
+				encodedBuf := make([]byte, base64.StdEncoding.EncodedLen(len(jsonBytes)))
+				base64.StdEncoding.Encode(encodedBuf, jsonBytes)
+				//mw := io.MultiWriter(os.Stdout,w)
+				//
+				//if _,err := mw.Write(encodedBuf); err != nil {
+				//	log.Printf("Error Writing message: %s\n",err)
+				//}
+				if _, err := w.Write(encodedBuf); err != nil {
+					log.Printf("Error Writing message: %s\n", err)
+				}
+				if err := w.Close(); err != nil {
+					return
+				}
 			}
 		case <-ticker.C:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))

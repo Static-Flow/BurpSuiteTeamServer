@@ -50,39 +50,35 @@ func (serverHub *ServerHub) writer() {
 					if name != message.sender.name {
 						log.Printf("has client %v+ muted us? %t", client, room.clients[name].isGivenClientMuted(message.sender.name))
 						if !room.clients[name].isGivenClientMuted(message.sender.name) {
-							select {
-							case client.sendChannel <- message:
-							default:
-								close(client.sendChannel)
-								delete(room.clients, client.name)
-								if len(room.clients) == 0 {
-									serverHub.deleteRoom(message.roomName)
-								}
-							}
+							serverHub.sendMessage(client, message, room)
 						}
 					}
 				}
 			} else {
 				for _, client := range room.clients {
 					//log.Printf("Attempting to send message body: %+v of message %+v, to client: %+v \n",*message.msg,message,*client)
-					select {
-					case client.sendChannel <- message:
-					default:
-						close(client.sendChannel)
-						delete(room.clients, client.name)
-						if len(room.clients) == 0 {
-							serverHub.deleteRoom(message.roomName)
-						}
-					}
+					serverHub.sendMessage(client, message, room)
 				}
 			}
 		} else { //to a specific person
 			if !room.clients[message.target].isGivenClientMuted(message.sender.name) {
 				clientToMessage, exists := room.getClient(message.target)
 				if exists && !clientToMessage.isGivenClientMuted(message.sender.name) {
-					clientToMessage.sendChannel <- message
+					serverHub.sendMessage(clientToMessage, message, room)
 				}
 			}
+		}
+	}
+}
+
+func (serverHub *ServerHub) sendMessage(clientToMessage *Client, message Message, room *Room) {
+	select {
+	case clientToMessage.sendChannel <- message:
+	default:
+		close(clientToMessage.sendChannel)
+		delete(room.clients, clientToMessage.name)
+		if len(room.clients) == 0 {
+			serverHub.deleteRoom(message.roomName)
 		}
 	}
 }
