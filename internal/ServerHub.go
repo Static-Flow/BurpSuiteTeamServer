@@ -42,10 +42,11 @@ func (serverHub *ServerHub) SetShortenerService(shortenerService *ShortenedUrls)
 func (serverHub *ServerHub) writer() {
 	for message := range serverHub.messages {
 		room := serverHub.rooms[message.roomName]
-		if message.target == "Self" { //to yourself
+		if message.target == "Self" { //echo message to client who sent it
 			message.sender.sendChannel <- message
 		} else if message.target == "Room" { //to everyone in the room
 			if message.sender != nil {
+				//sent from user to other room members
 				for name, client := range room.clients {
 					if name != message.sender.name {
 						log.Printf("has client %v+ muted us? %t", client, room.clients[name].isGivenClientMuted(message.sender.name))
@@ -55,8 +56,8 @@ func (serverHub *ServerHub) writer() {
 					}
 				}
 			} else {
+				//sent from server to room
 				for _, client := range room.clients {
-					//log.Printf("Attempting to send message body: %+v of message %+v, to client: %+v \n",*message.msg,message,*client)
 					serverHub.sendMessage(client, message, room)
 				}
 			}
@@ -132,11 +133,9 @@ func (serverHub *ServerHub) Register(conn *websocket.Conn, clientName string) *C
 func (serverHub *ServerHub) RemoveClient(client *Client) {
 	serverHub.mu.Lock()
 	delete(serverHub.allClients, client.name)
-	if client.roomName != "server" {
-		serverHub.rooms[client.roomName].deleteClient(client.name)
-		if len(serverHub.rooms[client.roomName].clients) == 0 {
-			serverHub.deleteRoom(client.roomName)
-		}
+	serverHub.rooms[client.roomName].deleteClient(client.name)
+	if client.roomName != "server" && len(serverHub.rooms[client.roomName].clients) == 0 {
+		serverHub.deleteRoom(client.roomName)
 	}
 	close(client.sendChannel)
 	serverHub.mu.Unlock()

@@ -44,31 +44,38 @@ func (r *Room) getClient(clientName string) (*Client, bool) {
 
 func (r *Room) addClient(c *Client) {
 	r.Lock()
-	defer r.Unlock()
 	r.clients[c.name] = c
+	c.roomName = r.name
+	r.Unlock()
+	r.updateRoomMembers()
 }
 
 func (r *Room) deleteClient(clientName string) {
 	r.Lock()
-	defer r.Unlock()
 	if _, ok := r.clients[clientName]; ok {
 		delete(r.clients, clientName)
 	}
+	r.Unlock()
+	r.updateRoomMembers()
+
 }
 
 func (r *Room) updateRoomMembers() {
-	r.Lock()
-	defer r.Unlock()
+	if r.name == "server" {
+		return
+	}
 	msg := NewBurpTCMessage()
 	msg.MessageType = "NEW_MEMBER_MESSAGE"
 
+	r.Lock()
 	keys := make([]string, 0, len(r.clients))
 	for k := range r.clients {
 		keys = append(keys, k)
 	}
+	r.Unlock()
 	if len(keys) > 0 {
-		log.Printf("Current room members: %s", strings.Join(keys, ","))
 		msg.Data = strings.Join(keys, ",")
+		log.Printf("Current room (%s) members: %s", r.name, msg.Data)
 		r.serverHub.messages <- generateMessage(msg, nil, r.name, "Room")
 	} else {
 		log.Println("no room members to update")

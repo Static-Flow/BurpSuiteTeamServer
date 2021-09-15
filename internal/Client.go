@@ -49,8 +49,6 @@ func (c *Client) parseMessage(message *BurpTCMessage) error {
 				log.Printf("%s joining room: %s", c.name, message.MessageTarget)
 				c.serverHub.rooms[c.roomName].deleteClient(c.name)
 				c.serverHub.rooms[message.MessageTarget].addClient(c)
-				c.roomName = message.MessageTarget
-				c.serverHub.rooms[c.roomName].updateRoomMembers()
 				c.serverHub.rooms[c.roomName].sendRoomMessagesToNewRoomMember(c.name)
 				message.MessageType = "GOOD_PASSWORD_MESSAGE"
 				c.serverHub.messages <- generateMessage(message, c, c.roomName, "Self")
@@ -64,28 +62,21 @@ func (c *Client) parseMessage(message *BurpTCMessage) error {
 			log.Printf("%s joining room: %s", c.name, message.MessageTarget)
 			c.serverHub.rooms[c.roomName].deleteClient(c.name)
 			c.serverHub.rooms[message.MessageTarget].addClient(c)
-			c.roomName = message.MessageTarget
-			c.serverHub.rooms[c.roomName].updateRoomMembers()
 			c.serverHub.rooms[c.roomName].sendRoomMessagesToNewRoomMember(c.name)
 
 		}
 	case "LEAVE_ROOM_MESSAGE":
-		log.Printf("leaving room: %s", c.roomName)
+		log.Printf("%s leaving room: %s", c.name, c.roomName)
 		c.serverHub.rooms[c.roomName].deleteClient(c.name)
-		c.serverHub.rooms["server"].addClient(c)
 		if len(c.serverHub.rooms[c.roomName].clients) == 0 {
 			c.serverHub.deleteRoom(c.roomName)
-		} else {
-			c.serverHub.rooms[c.roomName].updateRoomMembers()
 		}
-		c.roomName = "server"
+		c.serverHub.rooms["server"].addClient(c)
 	case "ADD_ROOM_MESSAGE":
 		log.Printf("creating new room: " + message.MessageTarget)
 		c.serverHub.rooms[c.roomName].deleteClient(c.name)
 		c.serverHub.addRoom(message.Data, message.MessageTarget)
 		c.serverHub.rooms[message.MessageTarget].addClient(c)
-		c.roomName = message.MessageTarget
-		c.serverHub.rooms[c.roomName].updateRoomMembers()
 	case "MUTE_MESSAGE":
 		if message.MessageTarget == "All" {
 			keys := reflect.ValueOf(c.serverHub.rooms[c.roomName].clients).MapKeys()
