@@ -116,59 +116,59 @@ func (c *Client) parseMessage(message *BurpTCMessage) error {
 		message.Data = strings.Join(keys, ",")
 		//log.Printf("Rooms message: %+v\n",message)
 		c.serverHub.messages <- generateMessage(message, c, c.roomName, message.MessageTarget)
-	case "COMMENT_MESSAGE":
-
-		//If there are already comments in the room
-		if len(c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments) > 0 {
-			//If the incoming request with comments has less comments than the old one we are deleting a comment
-			if len(c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments) > len(message.BurpRequestResponse.Comments) {
-				/*
-					oldComments : A, B
-					newComments: A
-				*/
-				log.Println("Deleting Comments")
-				if len(c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments) > 1 {
-					for _, oldComment := range c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments {
-						for _, newComment := range message.BurpRequestResponse.Comments {
-							if oldComment != newComment {
-								if oldComment.UserWhoCommented == c.name {
-									c.serverHub.rooms[c.roomName].updateRequestResponseComments(message)
-								} else {
-									log.Printf("User " + c.name + " cannot delete comment by " + oldComment.UserWhoCommented)
-								}
-							}
-						}
-					}
-				} else {
-					//if the last comment for the request is authored by the sender they can delete it
-					if c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments[0].UserWhoCommented == c.name {
-						c.serverHub.rooms[c.roomName].updateRequestResponseComments(message)
-					} else {
-						log.Printf("User " + c.name + " cannot delete comment by another user")
-					}
-				}
-			} else {
-				//If the incoming request with comments has more comments than the old one we are adding a comment
-				/*
-					oldComments : A
-					newComments: A, B
-				*/
-				log.Println("Adding Comments")
-				for _, oldComment := range c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments {
-					for _, newComment := range message.BurpRequestResponse.Comments {
-						if oldComment != newComment {
-							if newComment.UserWhoCommented == c.name {
-								c.serverHub.rooms[c.roomName].updateRequestResponseComments(message)
-							} else {
-								log.Printf("User " + c.name + " cannot add comment by " + newComment.UserWhoCommented)
-							}
-						}
-					}
-				}
-			}
-		} else {
-			c.serverHub.rooms[c.roomName].updateRequestResponseComments(message)
-		}
+	//case "COMMENT_MESSAGE": NOT CONVINCED THIS IS ALL THAT USEFUL, MAY REVISIT
+	//
+	//	//If there are already comments in the room
+	//	if len(c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments) > 0 {
+	//		//If the incoming request with comments has less comments than the old one we are deleting a comment
+	//		if len(c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments) > len(message.BurpRequestResponse.Comments) {
+	//			/*
+	//				oldComments : A, B
+	//				newComments: A
+	//			*/
+	//			log.Println("Deleting Comments")
+	//			if len(c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments) > 1 {
+	//				for _, oldComment := range c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments {
+	//					for _, newComment := range message.BurpRequestResponse.Comments {
+	//						if oldComment != newComment {
+	//							if oldComment.UserWhoCommented == c.name {
+	//								c.serverHub.rooms[c.roomName].updateRequestResponseComments(message)
+	//							} else {
+	//								log.Printf("User " + c.name + " cannot delete comment by " + oldComment.UserWhoCommented)
+	//							}
+	//						}
+	//					}
+	//				}
+	//			} else {
+	//				//if the last comment for the request is authored by the sender they can delete it
+	//				if c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments[0].UserWhoCommented == c.name {
+	//					c.serverHub.rooms[c.roomName].updateRequestResponseComments(message)
+	//				} else {
+	//					log.Printf("User " + c.name + " cannot delete comment by another user")
+	//				}
+	//			}
+	//		} else {
+	//			//If the incoming request with comments has more comments than the old one we are adding a comment
+	//			/*
+	//				oldComments : A
+	//				newComments: A, B
+	//			*/
+	//			log.Println("Adding Comments")
+	//			for _, oldComment := range c.serverHub.rooms[c.roomName].comments.getRequestWithComments(message.Data).Comments {
+	//				for _, newComment := range message.BurpRequestResponse.Comments {
+	//					if oldComment != newComment {
+	//						if newComment.UserWhoCommented == c.name {
+	//							c.serverHub.rooms[c.roomName].updateRequestResponseComments(message)
+	//						} else {
+	//							log.Printf("User " + c.name + " cannot add comment by " + newComment.UserWhoCommented)
+	//						}
+	//					}
+	//				}
+	//			}
+	//		}
+	//	} else {
+	//		c.serverHub.rooms[c.roomName].updateRequestResponseComments(message)
+	//	}
 	case "GET_CONFIG_MESSAGE":
 		message.MessageType = "GET_CONFIG_MESSAGE"
 		if c.serverHub.shortenerService != nil {
@@ -193,6 +193,8 @@ func (c *Client) parseMessage(message *BurpTCMessage) error {
 
 func (c *Client) Reader() {
 	defer func() {
+		log.Println("Client leaving")
+		close(c.sendChannel)
 		c.serverHub.RemoveClient(c)
 		_ = c.conn.Close()
 	}()
@@ -232,12 +234,14 @@ func (c *Client) Writer() {
 	for {
 		select {
 		case message, ok := <-c.sendChannel:
-			//fmt.Printf("Message: %+v to send to client: %s\n",*message.msg,c.name)
 			if c.conn != nil {
 				_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if !ok {
 					// The hub closed the channel.
-					_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+					if err := c.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+						log.Println(err)
+					}
+
 					return
 				}
 
@@ -248,11 +252,6 @@ func (c *Client) Writer() {
 				jsonBytes, err := json.Marshal(message.msg)
 				encodedBuf := make([]byte, base64.StdEncoding.EncodedLen(len(jsonBytes)))
 				base64.StdEncoding.Encode(encodedBuf, jsonBytes)
-				//mw := io.MultiWriter(os.Stdout,w)
-				//
-				//if _,err := mw.Write(encodedBuf); err != nil {
-				//	log.Printf("Error Writing message: %s\n",err)
-				//}
 				if _, err := w.Write(encodedBuf); err != nil {
 					log.Printf("Error Writing message: %s\n", err)
 				}
