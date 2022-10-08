@@ -21,12 +21,12 @@ func NewServerHub(serverPassword string) *ServerHub {
 	serverHub := &ServerHub{
 		allClients:     make(map[string]*Client),
 		rooms:          make(map[string]*Room),
-		messages:       make(chan Message, 1),
+		messages:       make(chan Message),
 		serverPassword: serverPassword,
 	}
 
 	serverHub.rooms["server"] = NewRoom(serverHub, "", "server")
-	go serverHub.writer()
+	go serverHub.eventLoop()
 
 	return serverHub
 }
@@ -39,7 +39,8 @@ func (serverHub *ServerHub) SetShortenerService(shortenerService *ShortenedUrls)
 	serverHub.shortenerService = shortenerService
 }
 
-func (serverHub *ServerHub) writer() {
+func (serverHub *ServerHub) eventLoop() {
+
 	for message := range serverHub.messages {
 		room := serverHub.rooms[message.roomName]
 		if message.target == "Self" { //echo message to client who sent it
@@ -108,6 +109,8 @@ func (serverHub *ServerHub) updateRooms() {
 }
 
 func (serverHub *ServerHub) ClientExistsInServer(clientName string) bool {
+	serverHub.mu.Lock()
+	defer serverHub.mu.Unlock()
 	for name := range serverHub.allClients {
 		if name == clientName {
 			return true
@@ -137,7 +140,7 @@ func (serverHub *ServerHub) RemoveClient(client *Client) {
 	if client.roomName != "server" && len(serverHub.rooms[client.roomName].clients) == 0 {
 		serverHub.deleteRoom(client.roomName)
 	}
-	close(client.sendChannel)
+
 	serverHub.mu.Unlock()
 }
 
