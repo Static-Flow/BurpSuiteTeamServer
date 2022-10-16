@@ -18,13 +18,13 @@ var upgrader = websocket.FastHTTPUpgrader{
 	WriteBufferSize: 1024,
 }
 
-func StartServer(serverPassword *string, host *string, enableUrlShortener *bool, shortenerPort *string, port *string) *ServerHub {
-	serverHub := NewServerHub(*serverPassword)
+func StartServer(serverPassword *string, host *string, enableUrlShortener *bool, shortenerPort *string, port *string) *Hub {
+	hub = NewHub(*serverPassword)
 
 	GenCrt(*host)
 	if *enableUrlShortener {
 		shortendURLs := NewShortenedUrls(*shortenerPort, *host)
-		serverHub.SetShortenerService(shortendURLs)
+		hub.SetShortenerService(shortendURLs)
 	}
 
 	if _, err := os.Stat("./burpServer.pem"); err == nil {
@@ -47,7 +47,7 @@ func StartServer(serverPassword *string, host *string, enableUrlShortener *bool,
 			Certificates: []tls.Certificate{crt},
 		}
 
-		ln, err := net.Listen("tcp", ":"+*port)
+		ln, err := net.Listen("tcp", *host+":"+*port)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -56,23 +56,18 @@ func StartServer(serverPassword *string, host *string, enableUrlShortener *bool,
 			case "/":
 				if authHeader := ctx.Request.Header.Peek("Auth"); bytes.Equal(authHeader, []byte(*serverPassword)) {
 					username := string(ctx.Request.Header.Peek("Username"))
-					if serverHub.ClientExistsInServer(username) {
-						log.Println("Found duplicate name")
-						ctx.Response.SetStatusCode(fasthttp.StatusConflict)
-						ctx.SetBody([]byte("409 - Duplicate name in server!"))
-					} else {
-						if err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
-							log.Println("Opening connection")
-							client := serverHub.Register(conn, username)
-							log.Printf("client connection: %v", client)
-							go client.Writer()
-							client.Reader()
 
-						}); err != nil {
-							log.Println(err)
-						}
+					if err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
+						log.Println("Opening connection")
+						client := hub.Register(conn, username)
+						log.Printf("client connection: %v", client)
+						go client.Writer()
+						client.Reader()
 
+					}); err != nil {
+						log.Println("Socket upgrade error:", err)
 					}
+
 				} else {
 					ctx.Response.SetStatusCode(fasthttp.StatusUnauthorized)
 					ctx.SetBody([]byte("401 - Bad Auth!"))
@@ -89,5 +84,5 @@ func StartServer(serverPassword *string, host *string, enableUrlShortener *bool,
 			log.Fatal("ListenAndServe: ", err)
 		}
 	}
-	return serverHub
+	return hub
 }
