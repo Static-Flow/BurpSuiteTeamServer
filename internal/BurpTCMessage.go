@@ -49,7 +49,6 @@ type BurpRequestResponse struct {
 
 type BurpTCMessage struct {
 	BurpRequestResponse *BurpRequestResponse `json:"burpmsg"`
-	MessageTarget       string               `json:"messageTarget"`
 	MessageType         string               `json:"msgtype"`
 	Data                string               `json:"data"`
 }
@@ -59,8 +58,8 @@ func NewBurpTCMessage() *BurpTCMessage {
 }
 
 func (b BurpTCMessage) String() string {
-	return fmt.Sprintf("%+v - %s - %s - %s",
-		b.BurpRequestResponse, b.MessageTarget, b.MessageType, b.Data)
+	return fmt.Sprintf("%+v - %s - %s",
+		b.BurpRequestResponse, b.MessageType, b.Data)
 }
 
 func (b BurpRequestResponse) addComment(comment Comment) {
