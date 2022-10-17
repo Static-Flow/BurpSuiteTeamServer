@@ -10,5 +10,5 @@ require (
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/lesismal/nbio v1.2.1 // indirect
 	github.com/pkg/profile v1.6.0 // indirect
-	github.com/valyala/fasthttp v1.29.0
+	github.com/valyala/fasthttp v1.34.0
 )
