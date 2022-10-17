@@ -47,7 +47,7 @@ func StartServer(serverPassword *string, host *string, enableUrlShortener *bool,
 			Certificates: []tls.Certificate{crt},
 		}
 
-		ln, err := net.Listen("tcp", *host+":"+*port)
+		ln, err := net.Listen("tcp", ":"+*port)
 		if err != nil {
 			log.Fatal(err)
 		}
