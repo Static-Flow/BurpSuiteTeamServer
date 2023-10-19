@@ -159,7 +159,7 @@ func (h *Hub) parseMessage(message *Message) error {
 		h.clientRoomChangeHandler(message.sender, "server")
 	case "ADD_ROOM_MESSAGE":
 		roomTargetData := strings.Split(message.msg.Data, ":")
-		log.Printf("creating new room: %s with password : %s", roomTargetData[0], roomTargetData[1])
+		//log.Printf("creating new room: %s with password : %s", roomTargetData[0], roomTargetData[1])
 		if _, ok := h.rooms[roomTargetData[0]]; ok {
 			message.msg.MessageType = "ROOM_EXISTS_MESSAGE"
 			h.sendMessageToClient(message)
